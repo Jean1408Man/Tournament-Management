@@ -27,10 +27,19 @@ def create_app(settings: Settings) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         check_storage(settings, create=True)
-        logger.info("Servicio mínimo iniciado")
+        connection = None
         try:
+            if settings.backend == "ray":
+                from tournament_management.adapters.ray_membership import RayConnection
+
+                connection = RayConnection(settings.ray_address)
+                connection.connect()
+                logger.info("Conexión Ray Client establecida")
+            logger.info("Servicio mínimo iniciado")
             yield
         finally:
+            if connection is not None:
+                connection.close()
             logger.info("Servicio detenido limpiamente")
 
     app = FastAPI(title="Tournament Management", version=__version__, lifespan=lifespan)

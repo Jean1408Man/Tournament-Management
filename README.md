@@ -51,8 +51,10 @@ automáticamente ni se debe versionar. Cada variable tiene opción equivalente:
 
 ## Estado actual
 
-Funciona el diagnóstico y el arranque HTTP mínimo del paso 1.4. El árbitro,
-los torneos, persistencia y ejecución Ray siguen pendientes.
+Funciona el diagnóstico y el arranque HTTP mínimo del paso 1.4. El paso 1.5
+incorpora Docker y conexión Ray Client, validados con dos recreaciones reales y
+persistencia de archivos en volumen. El árbitro, los torneos, persistencia de
+resultados y ejecución de partidas siguen pendientes.
 
 ## Arranque y diagnóstico (paso 1.4)
 
@@ -69,9 +71,10 @@ curl -i http://127.0.0.1:8000/ready
 - `serve` inicia HTTP en localhost. `/health` devuelve 200 si el proceso vive.
   `/ready` devuelve 503 porque aún no se ejecutan torneos, incluso con disco
   disponible. Su JSON explica las dependencias pendientes.
-- `serve --backend ray` selecciona configuración futura; no conecta a Ray y
-  tampoco anuncia disponibilidad. Los roles head/worker no pueden usar serve;
-  tendrán entradas propias en 1.5.
+- `serve --backend ray --ray-address ray://tm-head:10001` conecta al head por
+  Ray Client antes de servir HTTP y cierra la conexión al parar. Requiere un
+  head accesible; no inicia un clúster local automáticamente. Los roles head/worker
+  usan el entrypoint Docker, no el comando serve.
 - Ctrl+C o SIGTERM detienen el servidor con cierre de su ciclo de vida.
 - `probe-cluster`, `match`, `simulate` y `verify` aparecen en ayuda como
   pendientes y terminan con código 2 si se intentan usar.
@@ -86,6 +89,28 @@ Son valores iniciales configurables, no resultados de mediciones.
 
 La suite incluye arranque HTTP en un puerto local temporal y apagado SIGTERM;
 requiere permiso para abrir sockets locales.
+
+## Docker sin Compose (paso 1.5)
+
+Desde la raíz, con Docker disponible y permiso para acceder al daemon:
+
+```bash
+bash scripts/build-image.sh
+bash scripts/start-cluster.sh
+bash scripts/cluster-status.sh
+```
+
+El primer comando descarga lo necesario. Los otros exigen la imagen local y
+no hacen pull. Se crean head, dos workers y coordinador en tm-net. Solo la API
+se publica en localhost:8000. El coordinador monta el volumen tm-state.
+Los tres nodos Ray tienen límite de 2 GiB y el coordinador de 1 GiB;
+prever al menos 8 GiB para Docker con margen para el sistema operativo.
+
+`bash scripts/stop-cluster.sh` retira contenedores del proyecto conservando
+el volumen y la red. No ejecutar hasta guardar logs que se necesiten.
+La guía [deploy/OPERATIONS.md](deploy/OPERATIONS.md) contiene comandos Docker
+completos, recursos, diagnóstico y prueba de persistencia tras recrear el clúster.
+La ejecución de tareas por worker se verificará en 1.6.
 
 ## Organización del código
 

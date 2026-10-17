@@ -1,5 +1,10 @@
 # Despliegue
 
-En 1.5 se crearán Dockerfile y entrypoint.sh con roles coordinator, ray-head y
-ray-worker. Una imagen, red propia y volumen de estado. Compose está prohibido.
-Todavía no hay una imagen construible ni servicios implementados.
+Dockerfile instala el paquete y dependencias bloqueadas en una imagen.
+entrypoint.sh selecciona coordinator, ray-head o ray-worker. Compose está prohibido.
+
+Ver [OPERATIONS.md](OPERATIONS.md) para construcción, arranque y validación.
+Validado con contenedores reales: dos ciclos de recreación tras aplicar la
+mitigación gRPC documentada en OPERATIONS.md, diagnóstico final correcto y
+persistencia del archivo de prueba. Las pruebas automatizadas de scripts usan
+dobles; la ejecución de tareas en cada worker corresponde al paso 1.6.

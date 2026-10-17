@@ -1,4 +1,7 @@
 .git
+.codex
+.agents
+.aws
 .venv
 __pycache__
 *.py[cod]
@@ -11,4 +14,3 @@ artifacts
 experiments/results
 docs
 tests
-bots
