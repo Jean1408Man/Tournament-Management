@@ -43,16 +43,51 @@ uv run python -m tournament_management --help
 
 ## Configuración
 
-Copia `.env.example` a `.env` y ajusta sus valores cuando se implemente el
-coordinador. Las variables usarán el prefijo `TM_`; el orden previsto será
-argumentos de línea de comandos, variables de entorno y valores por defecto.
-No se debe versionar `.env`.
+La configuración usa el prefijo `TM_` y precedencia argumentos > entorno >
+valores por defecto. `.env.example` documenta todas las opciones; copiarlo a
+`.env` no las activa: hay que exportarlas en la terminal. No se carga .env
+automáticamente ni se debe versionar. Cada variable tiene opción equivalente:
+`TM_HTTP_PORT` corresponde a `--http-port`, por ejemplo.
 
 ## Estado actual
 
-Esta entrega deja un paquete Python instalable y el ejecutable `tm`. Los
-subcomandos del coordinador, la API, Ray, Docker y los formatos de torneo se
-implementarán en las etapas posteriores; no se presentan como funcionales.
+Funciona el diagnóstico y el arranque HTTP mínimo del paso 1.4. El árbitro,
+los torneos, persistencia y ejecución Ray siguen pendientes.
+
+## Arranque y diagnóstico (paso 1.4)
+
+```bash
+uv run tm doctor
+uv run tm serve --backend local --http-port 8000
+curl http://127.0.0.1:8000/health
+curl -i http://127.0.0.1:8000/ready
+```
+
+- `doctor` muestra JSON con versiones y configuración efectiva; crea el
+  directorio de datos si falta y comprueba escritura temporal sin dejar archivos.
+  No inicia Ray ni comprueba un clúster. Falla con código 1 ante error de disco.
+- `serve` inicia HTTP en localhost. `/health` devuelve 200 si el proceso vive.
+  `/ready` devuelve 503 porque aún no se ejecutan torneos, incluso con disco
+  disponible. Su JSON explica las dependencias pendientes.
+- `serve --backend ray` selecciona configuración futura; no conecta a Ray y
+  tampoco anuncia disponibilidad. Los roles head/worker no pueden usar serve;
+  tendrán entradas propias en 1.5.
+- Ctrl+C o SIGTERM detienen el servidor con cierre de su ciclo de vida.
+- `probe-cluster`, `match`, `simulate` y `verify` aparecen en ayuda como
+  pendientes y terminan con código 2 si se intentan usar.
+- Logs de aplicación/Uvicorn: JSON por stderr, UTC y reloj monotónico local,
+  campos de correlación nulos hasta disponer de una partida.
+  Stdout se reserva para salidas de comandos.
+
+Los límites de turnos/partidas/intentos y recursos se validan, pero se aplicarán
+con árbitro y scheduler. Se exige turno <= partida < intento y reintentos >= 0.
+Son valores iniciales configurables, no resultados de mediciones.
+`tm doctor --help` y `tm serve --help` enumeran las opciones.
+
+La suite incluye arranque HTTP en un puerto local temporal y apagado SIGTERM;
+requiere permiso para abrir sockets locales.
+
+## Organización del código
 
 El paso 1.2 incorpora la estructura del código:
 
