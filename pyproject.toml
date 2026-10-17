@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tournament-management"
+version = "0.1.0"
+description = "Plataforma distribuida para ejecutar torneos computacionales."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.115.12",
+  "ray[default]==2.40.0",
+  "uvicorn[standard]==0.34.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.5",
+  "ruff==0.11.10",
+]
+
+[project.scripts]
+tm = "tournament_management.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tournament_management"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
