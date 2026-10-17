@@ -75,6 +75,17 @@ directorios reservados. La documentación detallada está en
 `docs/architecture.md` y `docs/progress.md`; la configuración existente excluye
 `docs/` de Git, por lo que esos documentos son locales por ahora.
 
+## Contratos internos (paso 1.3)
+
+`domain/messages.py` define mensajes inmutables con JSON versionado para partidas,
+intentos, resultados, workers y eventos. `domain/states.py` valida transiciones
+de torneo, partida e intento. `application/ports.py` define los puertos de
+ejecución, repositorios y unidad de trabajo para aceptar resultados y avanzar
+torneos en una transacción. Los adaptadores aún no están implementados.
+
+Las pruebas cubren serialización, mensajes inválidos, fallos deportivos frente
+a infraestructura y transiciones. Detalle local en `docs/internal-contracts.md`.
+
 ## Uso de IA
 
 Pendiente: el formato de disclosure de IA exigido por el curso no fue incluido
