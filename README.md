@@ -76,7 +76,7 @@ curl -i http://127.0.0.1:8000/ready
   head accesible; no inicia un clúster local automáticamente. Los roles head/worker
   usan el entrypoint Docker, no el comando serve.
 - Ctrl+C o SIGTERM detienen el servidor con cierre de su ciclo de vida.
-- `probe-cluster`, `match`, `simulate` y `verify` aparecen en ayuda como
+- `match`, `simulate` y `verify` aparecen en ayuda como
   pendientes y terminan con código 2 si se intentan usar.
 - Logs de aplicación/Uvicorn: JSON por stderr, UTC y reloj monotónico local,
   campos de correlación nulos hasta disponer de una partida.
@@ -113,6 +113,13 @@ completos, recursos, diagnóstico y prueba de persistencia tras recrear el clús
 La ejecución de tareas por worker se verificará en 1.6.
 
 ## Organización del código
+
+El paso 1.6 incorpora `tm probe-cluster` y `bash scripts/probe-cluster.sh`:
+envían una tarea a cada worker y verifican identidades, versiones y resultados.
+Implementación entregada, pendiente de ejecutar las pruebas por el usuario.
+La guía [deploy/STEP16-TESTS.md](deploy/STEP16-TESTS.md) contiene los comandos
+locales, reconstrucción de imagen, prueba positiva y fallo controlado.
+`.github/workflows/ci.yml` configura lint y pytest al publicar en GitHub.
 
 El paso 1.2 incorpora la estructura del código:
 

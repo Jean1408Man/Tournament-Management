@@ -28,8 +28,13 @@ def build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help=f"Variable TM_{field.name.upper()}",
             )
+    probe = commands.add_parser(
+        "probe-cluster", help="Ejecuta una tarea de diagnóstico en cada worker Ray."
+    )
+    probe.add_argument("--ray-address", default=None, help="Dirección ray://host:10001")
+    probe.add_argument("--expected-workers", type=int, default=2)
+    probe.add_argument("--timeout-seconds", type=int, default=30, help="Plazo de las tareas")
     for name, step in {
-        "probe-cluster": "1.6",
         "match": "2.3",
         "simulate": "2.4",
         "verify": "5.2",
@@ -76,6 +81,23 @@ def main() -> None:
         print(json.dumps(report, ensure_ascii=False))
         if report["status"] == "error":
             raise SystemExit(1)
+        return
+    if args.command == "probe-cluster":
+        if not settings.ray_address.startswith("ray://") or settings.ray_address == "ray://":
+            parser.error("probe-cluster requiere --ray-address ray://host:10001 o TM_RAY_ADDRESS")
+        if args.expected_workers < 1 or args.timeout_seconds < 1:
+            parser.error("expected-workers y timeout-seconds deben ser positivos")
+        from tournament_management.adapters.ray_execution import probe_cluster
+        from tournament_management.application.ports import ExecutionError
+
+        try:
+            report = probe_cluster(
+                settings.ray_address, args.expected_workers, args.timeout_seconds
+            )
+        except (ExecutionError, ValueError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
+            raise SystemExit(1) from exc
+        print(json.dumps(report, ensure_ascii=False))
         return
     if settings.role != "coordinator":
         parser.error("tm serve requiere el rol coordinator; los roles Ray arrancarán en 1.5")

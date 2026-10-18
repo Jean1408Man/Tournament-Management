@@ -84,18 +84,30 @@ start-cluster.sh exige imagen local y usa --pull never.
 
 ### Reintentar tras un fallo de conexión
 
+El Dockerfile separa herramientas, dependencias y paquete del proyecto:
+uv se copia desde su imagen oficial ghcr.io/astral-sh/uv:0.12.2;
+pyproject.toml y uv.lock determinan la capa de dependencias; src/ y README
+solo afectan a la instalación del paquete. Bots se copian después.
+Los metadatos de revisión Git se añaden al final para no invalidar instalaciones.
+
+Tras esta reorganización pueden repetirse instalaciones una vez porque cambió
+la estructura de capas. La caché tm-uv-cache existente mantiene el mismo nombre.
+La imagen oficial de uv requiere una descarga inicial de sus capas mediante
+Docker, que comprueba su integridad; no usa pip para instalar uv. En construcciones
+posteriores, cambios solo en src/ no deben repetir la instalación de uv
+ni la capa de dependencias. Esto presupone conservar las cachés del builder.
+
 Repetir `bash scripts/build-image.sh`. El paso uv sync usa una caché BuildKit
 persistente (tm-uv-cache) fuera de la capa de imagen: los paquetes completados y
 guardados en caché se reutilizan aunque falle la instalación. No garantiza
 reanudar un archivo descargado parcialmente. La caché del intento anterior
 sin este montaje no se puede recuperar mediante este cambio.
 
-La configuración de descarga es: espera de lectura HTTP de 300 segundos,
+La configuración de descarga de dependencias mediante uv es: lectura HTTP de 300 segundos,
 conexión de 60 segundos, 8 reintentos y máximo 2 descargas simultáneas.
 Son límites por operación, no un plazo máximo de toda la construcción.
 La instalación usa el mismo uv.lock; no cambia versiones de dependencias.
-Los pasos previos de Python e instalación de uv se conservaron para aprovechar
-sus capas ya construidas.
+La imagen base de Python sigue siendo la misma.
 
 La caché depende del mismo builder Docker y puede perderse si se limpia o
 Docker la elimina por espacio. No ejecutar limpiezas de caché entre intentos.
