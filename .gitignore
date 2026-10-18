@@ -1,0 +1,23 @@
+# Entornos y cachés de Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Configuración local de asistentes y credenciales, ajena al proyecto
+.codex/
+.agents/
+.aws/
+
+# Salidas locales, secretos y artefactos de ejecución
+.env
+data/
+artifacts/
+experiments/results/
+*.sqlite3
+*.db
+
+# La documentación de planificación es local y no forma parte del artefacto entregable.
+docs/
