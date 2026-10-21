@@ -35,6 +35,11 @@ def create_app(settings: Settings) -> FastAPI:
                 connection = RayConnection(settings.ray_address)
                 connection.connect()
                 logger.info("Conexión Ray Client establecida")
+            if settings.database_url:
+                from tournament_management.adapters.postgres_store import check_connection
+
+                check_connection(settings.database_url)
+                logger.info("Conexión PostgreSQL comprobada")
             logger.info("Servicio mínimo iniciado")
             yield
         finally:
@@ -50,11 +55,19 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/ready")
     def ready():
-        checks = {"storage": "ready", "execution": "not_implemented"}
+        checks = {"storage": "ready", "database": "not_configured", "execution": "not_implemented"}
         try:
             check_storage(settings)
         except OSError:
             checks["storage"] = "unavailable"
+        if settings.database_url:
+            from tournament_management.adapters.postgres_store import check_connection
+
+            try:
+                check_connection(settings.database_url)
+                checks["database"] = "ready"
+            except OSError:
+                checks["database"] = "unavailable"
         # Hasta integrar los backends, salud HTTP no implica capacidad de torneos.
         return JSONResponse(
             status_code=503,

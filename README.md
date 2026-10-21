@@ -44,9 +44,11 @@ uv run python -m tournament_management --help
 ## Configuración
 
 La configuración usa el prefijo `TM_` y precedencia argumentos > entorno >
-valores por defecto. `.env.example` documenta todas las opciones; copiarlo a
-`.env` no las activa: hay que exportarlas en la terminal. No se carga .env
-automáticamente ni se debe versionar. Cada variable tiene opción equivalente:
+valores por defecto. Los scripts Docker leen las opciones de despliegue de
+`.env` como texto; las variables ya exportadas tienen prioridad. Copia
+`.env.example` a `.env` y configura `TM_POSTGRES_PASSWORD` con letras y números.
+Las demás opciones de la aplicación se exportan para ejecución local; `tm` no
+lee `.env` directamente. No se debe versionar `.env`. Cada variable tiene opción equivalente:
 `TM_HTTP_PORT` corresponde a `--http-port`, por ejemplo.
 
 ## Estado actual
@@ -92,17 +94,36 @@ requiere permiso para abrir sockets locales.
 
 ## Docker sin Compose (paso 1.5)
 
+### PostgreSQL
+
+PostgreSQL es el almacén transaccional del coordinador. `TM_DATABASE_URL` debe
+usar `postgresql://` (o `postgres://`) y este comando aplica el esquema
+idempotente incluido con la aplicación:
+
+```bash
+uv run tm migrate --database-url postgresql://USUARIO:CONTRASEÑA@HOST:5432/BASE
+```
+
+`TM_DATA_DIR` se conserva para artefactos y comprobaciones de disco; ya no debe
+usarse como base de datos. Sin una base configurada, el servicio mínimo puede
+arrancar para diagnóstico, pero no puede ejecutar torneos.
+
 Desde la raíz, con Docker disponible y permiso para acceder al daemon:
 
 ```bash
+docker pull postgres:16.6-bookworm
 bash scripts/build-image.sh
 bash scripts/start-cluster.sh
 bash scripts/cluster-status.sh
 ```
 
-El primer comando descarga lo necesario. Los otros exigen la imagen local y
-no hacen pull. Se crean head, dos workers y coordinador en tm-net. Solo la API
-se publica en localhost:8000. El coordinador monta el volumen tm-state.
+El primer comando descarga la imagen de PostgreSQL y el segundo lo necesario
+para la aplicación. Los otros exigen las imágenes locales y no hacen pull. Se
+crean PostgreSQL, head, dos workers y coordinador en tm-net. Solo la API se
+publica en localhost:8000. El coordinador monta el volumen tm-state y
+PostgreSQL conserva sus datos en tm-postgres-data. Define
+`TM_POSTGRES_PASSWORD` en `.env` antes de arrancar. Una base existente conserva
+su contraseña anterior; modificar `.env` no la cambia en PostgreSQL.
 Los tres nodos Ray tienen límite de 2 GiB y el coordinador de 1 GiB;
 prever al menos 8 GiB para Docker con margen para el sistema operativo.
 
@@ -126,10 +147,17 @@ El paso 1.2 incorpora la estructura del código:
 - `domain/`: reglas y formatos deportivos puros.
 - `application/`: casos de uso y puertos de ejecución/persistencia.
 - `referee/`: protocolo, procesos de bots y límites.
-- `adapters/`: implementaciones local, Ray, SQLite y artefactos.
+- `adapters/`: implementaciones local, Ray, PostgreSQL y artefactos.
 - `api/`: HTTP, esquemas y eventos.
 - `observability/`: logs y métricas.
-- `app.py`: composición de componentes; `config.py`: configuración.
+- `app.py`: composición de componentes; `config.py`: configuración;
+  `cli.py`: argumentos y despacho; `commands.py`: ejecución de comandos.
+
+La persistencia PostgreSQL separa la conexión y migración (`postgres_connection.py`),
+la unidad de trabajo (`postgres_store.py`) y los repositorios de partidas,
+torneos y eventos (`postgres_matches.py`, `postgres_tournaments.py` y
+`postgres_events.py`). Todos los repositorios de una unidad de trabajo comparten
+la misma conexión y transacción.
 
 Los módulos nuevos documentan responsabilidades y aún no implementan negocio.
 Solo los dos adaptadores Ray pueden importar Ray; aplicación y dominio no

@@ -6,8 +6,10 @@ image_id=""
 for name in "${TM_CONTAINERS[@]}"; do
   owned_container "$name"
   current="$(docker container inspect --format '{{.Image}}' "$name")"
-  if [[ -n "$image_id" && "$current" != "$image_id" ]]; then die "Imágenes distintas."; fi
-  image_id="$current"
+  if [[ "$name" != tm-postgres ]]; then
+    if [[ -n "$image_id" && "$current" != "$image_id" ]]; then die "Imágenes de aplicación distintas."; fi
+    image_id="$current"
+  fi
   [[ "$(docker container inspect --format '{{.State.Running}}' "$name")" == true ]] ||
     die "$name no está ejecutándose."
   docker container inspect --format \
@@ -25,6 +27,7 @@ else
   exit "$status"
 fi
 docker exec tm-coordinator python -c \
-  'import socket; print({n: socket.gethostbyname(n) for n in ("tm-head", "tm-worker-1", "tm-worker-2")})'
+  'import socket; print({n: socket.gethostbyname(n) for n in ("tm-postgres", "tm-head", "tm-worker-1", "tm-worker-2")})'
+docker exec tm-coordinator tm migrate
 docker exec tm-coordinator tm doctor --backend ray --http-host 0.0.0.0
 printf 'Estado de infraestructura comprobado; /ready sigue en 503 hasta implementar torneos.\n'

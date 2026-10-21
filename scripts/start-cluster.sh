@@ -2,6 +2,8 @@
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 require_docker
+[[ "$TM_POSTGRES_PASSWORD" =~ ^[a-zA-Z0-9]+$ ]] ||
+  die "Configura TM_POSTGRES_PASSWORD en .env usando solo letras y números."
 command -v timeout >/dev/null || die "Se requiere timeout (GNU coreutils)."
 [[ "$TM_START_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "TM_START_TIMEOUT debe ser positivo."
 image_id="$(docker image inspect --format '{{.Id}}' "$TM_IMAGE")" ||
@@ -23,12 +25,25 @@ if docker volume inspect tm-state >/dev/null 2>&1; then
 else
   docker volume create --label "$TM_LABEL_KEY=$TM_LABEL_VALUE" tm-state
 fi
+if docker volume inspect tm-postgres-data >/dev/null 2>&1; then
+  owned volume tm-postgres-data
+else
+  docker volume create --label "$TM_LABEL_KEY=$TM_LABEL_VALUE" tm-postgres-data
+fi
 
 trap 'status=$?; printf "Arranque falló (código %s), línea %s: %s\n" "$status" "$LINENO" "$BASH_COMMAND" >&2; diagnostics; exit "$status"' ERR
 base=(--detach --pull never --init --network tm-net --label "$TM_LABEL_KEY=$TM_LABEL_VALUE"
       --stop-timeout 20 --log-opt max-size=10m --log-opt max-file=3
       --env GRPC_POLL_STRATEGY=poll --env GRPC_ENABLE_FORK_SUPPORT=true)
 ray_limits=(--cpus 1 --memory 2g --shm-size 512m --ulimit nofile=65536:65536)
+
+docker image inspect "$TM_POSTGRES_IMAGE" >/dev/null 2>&1 ||
+  die "Imagen PostgreSQL ausente ($TM_POSTGRES_IMAGE). Descárgala explícitamente antes de arrancar."
+docker run "${base[@]}" --name tm-postgres --hostname tm-postgres \
+  --mount source=tm-postgres-data,target=/var/lib/postgresql/data \
+  --env POSTGRES_DB=tournament_management --env POSTGRES_USER=tm \
+  --env POSTGRES_PASSWORD="$TM_POSTGRES_PASSWORD" "$TM_POSTGRES_IMAGE"
+wait_for "PostgreSQL" docker exec tm-postgres pg_isready -U tm -d tournament_management
 
 docker run "${base[@]}" "${ray_limits[@]}" --name tm-head --hostname tm-head \
   "$image_id" ray-head
@@ -46,6 +61,7 @@ docker run "${base[@]}" --name tm-coordinator --hostname tm-coordinator \
   --cpus 1 --memory 1g --publish "127.0.0.1:${TM_API_PORT:-8000}:8000" \
   --mount source=tm-state,target=/var/lib/tm \
   --env TM_RAY_ADDRESS=ray://tm-head:10001 \
+  --env "TM_DATABASE_URL=postgresql://tm:${TM_POSTGRES_PASSWORD}@tm-postgres:5432/tournament_management" \
   --env TM_BACKEND=ray --env TM_HTTP_HOST=0.0.0.0 \
   "$image_id" coordinator
 wait_for "API tras conexión Ray" docker exec tm-coordinator python -c \

@@ -34,6 +34,7 @@ def test_precedence():
         {"TM_MAX_RETRIES": "-1"},
         {"TM_LOG_LEVEL": "invalid"},
         {"TM_DATA_DIR": ""},
+        {"TM_DATABASE_URL": "mysql://not-postgresql"},
         {"TM_TURN_TIMEOUT_MS": "90001"},
         {"TM_MEMORY_LIMIT_BYTES": "0"},
     ],
@@ -64,6 +65,16 @@ def test_doctor(tmp_path):
     assert report["status"] == "ok"
     assert report["cluster_checked"] is False
     assert list((tmp_path / "state").iterdir()) == []
+
+
+def test_doctor_does_not_expose_database_url(tmp_path):
+    result = run_cli(
+        "doctor", "--data-dir", str(tmp_path),
+        "--database-url", "postgresql://tm:secret@localhost/example",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "secret" not in result.stdout
+    assert json.loads(result.stdout)["configuration"]["database_url"] == "[oculta]"
 
 
 def test_doctor_unwritable_target(tmp_path):
@@ -132,7 +143,11 @@ def test_health_readiness_and_storage_loss(tmp_path):
             assert payload["status"] == "alive"
             status, payload = await request(app, "/ready")
             assert status == 503
-            assert payload["checks"] == {"storage": "ready", "execution": "not_implemented"}
+            assert payload["checks"] == {
+                "storage": "ready",
+                "database": "not_configured",
+                "execution": "not_implemented",
+            }
             (tmp_path / "state").rmdir()
             status, payload = await request(app, "/ready")
             assert status == 503

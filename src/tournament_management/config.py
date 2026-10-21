@@ -13,6 +13,7 @@ class Settings:
     http_host: str = "127.0.0.1"
     http_port: int = 8000
     data_dir: str = "./data"
+    database_url: str = ""
     log_level: str = "INFO"
     turn_timeout_ms: int = 1000
     match_timeout_ms: int = 60000
@@ -32,6 +33,8 @@ class Settings:
         for name in ("ray_address", "http_host", "data_dir"):
             if not getattr(self, name).strip():
                 raise ValueError(f"TM_{name.upper()} no puede estar vacío")
+        if self.database_url and not self.database_url.startswith(("postgresql://", "postgres://")):
+            raise ValueError("TM_DATABASE_URL debe usar PostgreSQL")
         if not 1 <= self.http_port <= 65535:
             raise ValueError("TM_HTTP_PORT debe estar entre 1 y 65535")
         for name in (

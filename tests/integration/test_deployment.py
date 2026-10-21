@@ -145,6 +145,8 @@ def fake_commands(tmp_path):
         "        print('tournament-management')\n"
         "    elif '{{.State.Running}}' in sys.argv:\n"
         "        print('true')\n"
+        "    elif os.environ.get('TEST_DIFFERENT_IMAGES') and '{{.Image}}' in sys.argv:\n"
+        "        print('postgres-image' if 'tm-postgres' in sys.argv else 'app-image')\n"
         "    else:\n"
         "        print('same-image')\n"
         "if 'exec' in sys.argv and 'timeout' in sys.argv:\n"
@@ -228,7 +230,7 @@ def test_membership_timeout_is_reported_and_runs_inside_container(fake_commands)
 
 def test_status_uses_ray_configuration_for_doctor(fake_commands):
     env, calls = fake_commands
-    env["TEST_OWNED"] = "1"
+    env.update(TEST_OWNED="1", TEST_DIFFERENT_IMAGES="1")
     result = subprocess.run(
         ["bash", str(ROOT / "scripts/cluster-status.sh")],
         env=env,
@@ -239,6 +241,33 @@ def test_status_uses_ray_configuration_for_doctor(fake_commands):
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
     doctor = next(args for args in commands if "doctor" in args)
     assert doctor[-4:] == ["--backend", "ray", "--http-host", "0.0.0.0"]
+
+
+def test_dotenv_read_as_data_and_environment_wins(fake_commands, tmp_path):
+    env, _ = fake_commands
+    config = tmp_path / "settings.env"
+    marker = tmp_path / "executed"
+    config.write_text(
+        "TM_API_PORT=8765\n"
+        "TM_POSTGRES_PASSWORD=fromfile\n"
+        f"IGNORED=$(touch {marker})\n"
+    )
+    env.update(TM_ENV_FILE=str(config), TM_POSTGRES_PASSWORD="fromenvironment")
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; printf "%s %s" "$TM_API_PORT" "$TM_POSTGRES_PASSWORD"',
+            "test",
+            str(ROOT / "scripts/common.sh"),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "8765 fromenvironment"
+    assert not marker.exists()
 
 
 def test_stop_uses_timeout_and_preserves_volume(fake_commands):
@@ -253,6 +282,6 @@ def test_stop_uses_timeout_and_preserves_volume(fake_commands):
     assert result.returncode == 0, result.stderr
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
     stops = [args for args in commands if args[0] == "stop"]
-    assert len(stops) == 4
+    assert len(stops) == 5
     assert all(args[1:3] == ["--timeout", "20"] for args in stops)
     assert not any(args[0] in {"volume", "network"} for args in commands)

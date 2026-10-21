@@ -10,13 +10,15 @@ La ejecución de tareas de diagnóstico en cada worker corresponde a 1.6.
 Una imagen instala Python 3.12.13, uv 0.12.2, el paquete y las dependencias de
 uv.lock, incluido Ray 2.40.0. La etiqueta por defecto es
 tournament-management:step-1.5; TM_IMAGE permite otra. La imagen registra la
-revisión Git (con sufijo dirty si procede). Los cuatro contenedores se crean
-mediante el mismo ID inmutable de imagen, aunque la etiqueta cambie después.
+revisión Git (con sufijo dirty si procede). Los cuatro contenedores de la
+aplicación se crean mediante el mismo ID inmutable de imagen, aunque la etiqueta
+cambie después; PostgreSQL usa su imagen oficial independiente.
 Las imágenes base se fijan por versión, no por digest: registrar su digest al
 hacer la primera construcción si se necesita reproducción binaria exacta.
 
 | Contenedor | Rol | Límite Docker | Recursos Ray |
 |---|---|---|---|
+| tm-postgres | Persistencia PostgreSQL | Sin límite adicional | No aplica |
 | tm-head | Control y servidor Ray Client | 1 CPU, 2 GiB RAM, 512 MiB shm | CPU=0, GPU=0 |
 | tm-worker-1 | Ejecución | 1 CPU, 2 GiB RAM, 512 MiB shm | CPU=1, GPU=0, tm_worker=1 |
 | tm-worker-2 | Ejecución | 1 CPU, 2 GiB RAM, 512 MiB shm | CPU=1, GPU=0, tm_worker=1 |
@@ -25,8 +27,14 @@ hacer la primera construcción si se necesita reproducción binaria exacta.
 Son límites, no reservas físicas. Presupuesto orientativo: 4 CPU y al menos
 8 GiB para Docker, con margen adicional para el sistema operativo. Cada nodo
 Ray usa 256 MiB de object store. Los valores están en start-cluster.sh.
-El estado se monta exclusivamente en tm-coordinator:/var/lib/tm desde tm-state.
-Todavía no hay base de datos; se verifica persistencia de archivos.
+El coordinador conserva artefactos en tm-state y PostgreSQL sus datos en
+tm-postgres-data. Ambos volúmenes se preservan al detener el clúster. El
+arranque requiere que la imagen `postgres:16.6-bookworm` esté disponible y crea
+la base `tournament_management`; el coordinador aplica el esquema idempotente.
+Copiar `.env.example` a `.env` y configurar `TM_POSTGRES_PASSWORD` con letras y
+números antes de arrancar. Los scripts leen ese archivo sin ejecutarlo; una
+variable ya exportada tiene prioridad. Una base existente conserva la contraseña
+que tenía, incluso si se modifica `.env`.
 
 La red bridge tm-net es local a un host Docker. Solo se publica
 127.0.0.1:8000 hacia el puerto 8000 del coordinador. Ray 6379/10001 no se
@@ -70,6 +78,7 @@ Desde la raíz del repositorio:
 
 ```bash
 docker info
+docker pull postgres:16.6-bookworm
 bash scripts/build-image.sh
 bash scripts/start-cluster.sh
 bash scripts/cluster-status.sh
@@ -114,8 +123,9 @@ Docker la elimina por espacio. No ejecutar limpiezas de caché entre intentos.
 Referencia: [caché uv en Docker](https://docs.astral.sh/uv/guides/integration/docker/#caching)
 y [opciones HTTP de uv](https://docs.astral.sh/uv/configuration/environment/).
 
-Resultado esperado: tres nodos Ray vivos (head sin CPU y dos workers con CPU),
-cuatro contenedores con la misma imagen, resolución DNS interna y API saludable.
+Resultado esperado: PostgreSQL disponible, tres nodos Ray vivos (head sin CPU y
+dos workers con CPU), cuatro contenedores de aplicación con la misma imagen,
+resolución DNS interna y API saludable.
 /ready continúa devolviendo 503 porque el motor de torneos todavía falta.
 Esto no constituye un fallo del despliegue.
 
@@ -133,8 +143,8 @@ bash scripts/start-cluster.sh
 docker exec tm-coordinator python -c 'from pathlib import Path; assert Path("/var/lib/tm/step15-check.txt").read_text() == "persistencia-ok"; print("Persistencia verificada")'
 ```
 
-stop-cluster.sh detiene y elimina solo los cuatro contenedores del proyecto,
-tras validar sus etiquetas. Conserva tm-state y tm-net. Se pierden los
+stop-cluster.sh detiene y elimina los cinco contenedores del proyecto, tras
+validar sus etiquetas. Conserva tm-state, tm-postgres-data y tm-net. Se pierden los
 archivos temporales de los contenedores y sus logs locales Docker al eliminarlos;
 guardar evidencia antes de parar. El volumen permite recuperar el estado.
 
