@@ -232,8 +232,53 @@ de ejecución: no presenta nodos de membresía Ray como ejecutores de partidas.
 El [recorrido HTTP](../examples/api/README.md) permite registrar bots, ejecutar
 ambos formatos, consultar intentos y reanudar eventos. El cierre del servidor
 limita a cinco segundos la espera por conexiones HTTP activas, incluido SSE.
-Un apagado conserva registros, pero aún no reconstruye automáticamente la cola
-de torneos: esa recuperación corresponde a 3.4. Usa un solo coordinador.
+Desde 3.4 el arranque reconstruye automáticamente los torneos pendientes con
+backend local, preservando resultados, presupuesto y cancelaciones. Usa un solo
+coordinador activo por base.
 
 Esta etapa se verificó con PostgreSQL y HTTP reales en las pruebas; no se
 reconstruyeron ni recrearon los contenedores como parte de esa verificación.
+
+## Reinicio del coordinador (etapa 3.4)
+
+Después de reconstruir y recrear con la imagen que contiene esta etapa, para
+reiniciar solo el coordinador conservando PostgreSQL y los artefactos:
+
+```bash
+docker restart tm-coordinator
+curl -i http://127.0.0.1:8000/ready
+docker logs --tail 100 tm-coordinator
+```
+
+Esperar a que termine el arranque antes de repetir la consulta de disponibilidad.
+El log `Recuperación completada` informa cuántos torneos quedaron en la cola.
+La API empieza a servir después de confirmar la recuperación. Si esta falla,
+el arranque falla y debe revisarse el log; no se anuncia una API lista con
+trabajo parcialmente recuperado.
+
+Para una prueba de corte abrupto en el laboratorio, guardar antes los IDs del
+torneo y del último evento, y comprobar que el torneo aún figure running:
+
+```bash
+docker kill --signal KILL tm-coordinator
+docker start tm-coordinator
+curl -i http://127.0.0.1:8000/ready
+```
+
+Después, consultar el mismo torneo y su historial de intentos usando los
+comandos de examples/api/README.md. Si quedó un intento sin confirmar debe
+aparecer lost y, si hay presupuesto, un reemplazo con otro ID y generación.
+Si el resultado alcanzó a confirmarse antes del corte se conserva accepted;
+no se exige perder un resultado que ya era durable. Los torneos de ejemplo
+pueden finalizar muy rápido: la prueba automatizada detiene el proceso
+exactamente antes/después del commit para verificar ambas posibilidades.
+
+Repetir cortes puede agotar TM_MAX_RETRIES y dejar blocked; reiniciar no repone
+el presupuesto. En ejecución local fuera de Docker, conservar tanto
+TM_DATABASE_URL como TM_DATA_DIR y volver a ejecutar `tm serve --backend local`.
+No iniciar una segunda instancia mientras la anterior siga activa: esta etapa
+no implementa elección de líder ni exclusión entre coordinadores.
+
+Las pruebas automatizadas de 3.4 usan PostgreSQL y HTTP reales con SIGKILL de
+procesos propios. No se ejecutaron estas operaciones Docker durante la entrega.
+El mecanismo de distribución de artefactos entre máquinas permanece en 4.2.

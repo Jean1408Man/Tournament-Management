@@ -13,6 +13,16 @@ class _PostgresTournaments(TournamentRepository):
     def __init__(self, connection: Any) -> None:
         self.connection = connection
 
+    def recoverable_ids(self) -> tuple[str, ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tournament_id FROM tournaments "
+                "WHERE state = %s AND definition IS NOT NULL "
+                "ORDER BY created_at, tournament_id",
+                (TournamentState.RUNNING.value,),
+            )
+            return tuple(row["tournament_id"] for row in cursor.fetchall())
+
     def lock(self, tournament_id: str) -> dict:
         """Orden global de bloqueo: torneo → partida → intento.
 

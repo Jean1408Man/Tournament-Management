@@ -4,6 +4,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from tournament_management.application.coordinator.cancellation import request_stop
 from tournament_management.application.coordinator.policy import ExecutionPolicy
 from tournament_management.application.persistent_tournament_service import (
     PersistentTournamentService,
@@ -37,7 +38,7 @@ class AttemptRunner:
         deadline = time.monotonic() + self.policy.attempt_timeout_ms / 1000
         while not self.stopping.is_set():
             if cancelled():
-                self.backend.cancel(attempt.attempt_id)
+                request_stop(self.backend, attempt.attempt_id)
                 return
             for outcome in self.backend.poll():
                 if outcome.attempt_id != attempt.attempt_id:
@@ -58,7 +59,7 @@ class AttemptRunner:
             if time.monotonic() >= deadline:
                 # Invalidación durable antes de cancelar físicamente o reemplazar.
                 self.results.finish_failure(self._failure(attempt, "attempt_timeout"), retry=retry)
-                self.backend.cancel(attempt.attempt_id)
+                request_stop(self.backend, attempt.attempt_id)
                 return
             self.stopping.wait(0.02)
 

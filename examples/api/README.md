@@ -76,5 +76,16 @@ uv run ruff check .
 La suite incluye un ejecutor lento controlado para comprobar cancelación
 activa, respuestas tardías, timeout y reintentos de forma reproducible.
 No debe perderse el resultado aceptado ni existir dos intentos aceptados para
-la misma partida. Tras reiniciar se conserva lo consultable, pero todavía no
-se reanuda automáticamente el trabajo pendiente: eso corresponde a 3.4.
+la misma partida. Desde 3.4, reiniciar con la misma base y artefactos recupera
+el trabajo pendiente dentro del presupuesto de reintentos. Un torneo cancelado
+no se reactiva. Un intento interrumpido se ve como lost; el reemplazo tiene otro
+ID y una generación mayor. Los resultados ya confirmados se conservan.
+
+Para comprobar los límites de un reinicio de forma reproducible:
+
+```bash
+uv run pytest tests/integration/api/test_restart_process.py tests/integration/api/test_recovery.py -q
+```
+
+Estas pruebas detienen y reinician procesos propios de prueba. No afectan los
+contenedores ni la base de desarrollo; usan la base temporal de la suite.

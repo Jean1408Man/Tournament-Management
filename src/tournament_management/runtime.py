@@ -50,18 +50,18 @@ def application_services(settings: Settings) -> Iterator[ApiServices | None]:
         work_factory=work_factory,
         max_upload_bytes=settings.artifact_max_bytes,
     )
-    if settings.backend == "local":
-        services.backend = LocalExecution(
-            lambda attempt, cancel: run_registered_match(attempt, store, cancel=cancel),
-        )
-        policy = ExecutionPolicy(
-            **{field.name: getattr(settings, field.name) for field in fields(ExecutionPolicy)}
-        )
-        services.coordinator = TournamentCoordinator(
-            work_factory, services.backend, results, policy
-        )
-        services.coordinator.start()
     try:
+        if settings.backend == "local":
+            services.backend = LocalExecution(
+                lambda attempt, cancel: run_registered_match(attempt, store, cancel=cancel),
+            )
+            policy = ExecutionPolicy(
+                **{field.name: getattr(settings, field.name) for field in fields(ExecutionPolicy)}
+            )
+            services.coordinator = TournamentCoordinator(
+                work_factory, services.backend, results, policy
+            )
+            services.coordinator.start()
         yield services
     finally:
         if services.coordinator:

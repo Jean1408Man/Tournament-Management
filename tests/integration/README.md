@@ -42,3 +42,23 @@ observar el orden entre commit, acuse y cancelación.
 
 `uv run pytest tests/unit/test_api_contract.py -q` comprueba que el OpenAPI
 publicado coincide con `contracts/openapi-v1.json`, sin requerir PostgreSQL.
+
+## Recuperación (etapa 3.4)
+
+`uv run pytest tests/integration/recovery -q` comprueba pérdida de intentos,
+presupuesto que no se reinicia, conservación de resultados y próximos cruces,
+estados terminales, cancelación entre enumeración/bloqueo y rollback durante
+la recuperación, incluso con un torneo anterior ya confirmado.
+
+`uv run pytest tests/integration/api/test_restart_process.py -q` arranca un
+servidor en un proceso independiente con bots y HTTP reales. Una pausa de
+prueba señala antes/después de aceptar un resultado; el test envía SIGKILL y
+arranca otra API con la misma base y archivos. Cubre ambos formatos, resultados
+ya observados, eventos reanudados y cancelaciones que sobreviven al corte.
+`test_recovery.py` comprueba cierre limpio, cola aún no iniciada, presupuesto
+agotado y fallo de detención física después de cancelar durablemente.
+
+El cliente HTTP compartido se separa en api/client.py y el servidor
+instrumentado está en api/recovery_server.py; ese código solo pertenece a
+pruebas. No se exponen endpoints de fallo en producción ni se detienen procesos
+externos a la suite. Se aplican los requisitos PostgreSQL/socket anteriores.

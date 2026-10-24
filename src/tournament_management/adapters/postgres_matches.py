@@ -4,6 +4,7 @@ from typing import Any
 
 from tournament_management.adapters.postgres_attempt_failures import PostgresAttemptFailures
 from tournament_management.adapters.postgres_match_queries import PostgresMatchQueries
+from tournament_management.adapters.postgres_match_recovery import PostgresMatchRecovery
 from tournament_management.adapters.postgres_tournaments import _PostgresTournaments
 from tournament_management.application.ports import MatchRepository
 from tournament_management.domain.messages import (
@@ -20,7 +21,9 @@ from tournament_management.domain.states import (
 )
 
 
-class _PostgresMatches(PostgresMatchQueries, PostgresAttemptFailures, MatchRepository):
+class _PostgresMatches(
+    PostgresMatchQueries, PostgresAttemptFailures, PostgresMatchRecovery, MatchRepository
+):
     def __init__(self, connection: Any) -> None:
         self.connection = connection
 

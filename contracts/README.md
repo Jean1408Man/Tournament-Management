@@ -1,4 +1,4 @@
-# Contrato HTTP v1 — etapa 3.3
+# Contrato HTTP v1 — etapas 3.3–3.4
 
 Contrato de máquina: [openapi-v1.json](openapi-v1.json), versión 1.0.0.
 La aplicación publica el mismo documento en `/api/v1/openapi.json` y su interfaz
@@ -98,11 +98,43 @@ subidos. Los detalles precisos de campos y tipos están en OpenAPI.
 | 422 | Campos, tipos o código fuente inválidos |
 | 503 | Base, artefacto o ejecución no disponibles |
 
-Usar un solo proceso coordinador. Los datos son durables, pero el arranque no
-reconstruye automáticamente la cola (etapa 3.4). La confirmación de resultados
+Usar un solo proceso coordinador activo por base. Desde 3.4 el arranque
+reconstruye la cola antes de atender HTTP. La confirmación de resultados
 precede al acuse al backend; si falla la persistencia, el coordinador deja de
 admitir nuevas creaciones y /ready responde 503. El backend local expone su
 worker propio; el backend Ray aún devuelve una lista vacía y no admite crear
 torneos. No se confunde membresía Ray con capacidad de ejecutar partidas.
 
 Recorrido completo: [ejemplos HTTP](../examples/api/README.md).
+
+## Recuperación al arrancar (3.4)
+
+El arranque local enumera los torneos running con definición durable, en orden
+de creación e ID, y toma brevemente el bloqueo de cada torneo. Marca como lost
+los intentos activos de la ejecución anterior y libera su referencia vigente.
+Registra `attempt.lost` con detalle `coordinator_restart` en esa misma transacción.
+Los resultados, cuadros, clasificaciones e IDs ya confirmados no se recrean.
+No se modifica el contrato de creación ni se exige un endpoint de recuperación.
+
+Los reemplazos usan otro ID y MAX(generation)+1. El máximo total por partida es
+1 + TM_MAX_RETRIES del nuevo arranque, contando generaciones ya persistidas:
+reinicios consecutivos no reponen ese presupuesto. Un intento emitido cuenta
+aunque el corte ocurriera antes de enviarlo. Agotar el presupuesto deja blocked
+y añade `tournament.blocked` con detalle `retry_budget_exhausted_on_recovery`.
+Una bajada de TM_MAX_RETRIES puede bloquear trabajo antes reintentable.
+
+completed, cancelled y blocked se conservan. Las filas antiguas sin definición
+no se reconstruyen inventando un torneo. Recuperar un torneo es transaccional;
+si falla, el arranque no atiende HTTP. Otro arranque puede repetir lo ya
+confirmado sin duplicar eventos de pérdida. SSE conserva los IDs confirmados
+y permite reanudar desde el cursor que el cliente guardó antes del corte.
+
+Un resultado que se confirmó justo antes de detenerse permanece aceptado, aunque
+faltara el acuse al backend. Uno no confirmado puede ejecutarse de nuevo. Se
+promete un único resultado deportivo aceptado por partida, no una única ejecución
+física. No hay elección de líder ni exclusión de otros coordinadores activos:
+esta recuperación presupone que la instancia anterior ya se detuvo.
+
+La cancelación se confirma antes de solicitar parar el intento. Si esa solicitud
+falla se registra el error, pero la operación HTTP conserva el estado cancelado.
+La petición de parada no garantiza que el proceso ya terminó al responder 200.

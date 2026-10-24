@@ -3,11 +3,13 @@
 Prototipo de una plataforma distribuida para ejecutar torneos computacionales.
 La Fase 1 usa Ray para la infraestructura inicial. La Etapa 2 implementa Nim,
 bots, árbitro, formatos de torneo y simulación local mediante un backend de
-intentos. Las etapas 3.1–3.3 añaden persistencia transaccional, registro
-durable de bots por hash y una API ejecutable con backend local; consulta el
-[informe de 3.1](<docs/Fase 3 Reportes/PHASE3_1-REPORT.md>) y el
-[informe de 3.2](<docs/Fase 3 Reportes/PHASE3_2-REPORT.md>) y el
-[informe de 3.3](<docs/Fase 3 Reportes/PHASE3_3-REPORT.md>).
+intentos. Las etapas 3.1–3.4 añaden persistencia transaccional, registro
+durable de bots por hash, API local y recuperación al reiniciar. Consulta el
+[informe consolidado de Fase 3](<docs/Fase 3 Reportes/PHASE3-REPORT.md>) y los
+informes individuales de [3.1](<docs/Fase 3 Reportes/PHASE3_1-REPORT.md>),
+[3.2](<docs/Fase 3 Reportes/PHASE3_2-REPORT.md>),
+[3.3](<docs/Fase 3 Reportes/PHASE3_3-REPORT.md>) y
+[3.4](<docs/Fase 3 Reportes/PHASE3_4-REPORT.md>).
 
 ## Versiones fijadas
 
@@ -67,8 +69,9 @@ archivos Python con `tm register-bot`, consultar su integridad y compartirlos
 con los workers mediante un volumen interno de solo lectura.
 La etapa 3.3 incorpora registro HTTP, creación idempotente, ejecución local
 durable, consultas, cancelación y eventos SSE reanudables. La simulación CLI
-sigue en memoria. La recuperación automática al reiniciar corresponde a 3.4;
-la ejecución distribuida de partidas con Ray sigue pendiente.
+sigue en memoria. La etapa 3.4 recupera la cola al arrancar, invalida intentos
+anteriores y conserva el presupuesto de reintentos y las cancelaciones.
+La ejecución distribuida de partidas con Ray sigue pendiente.
 
 ## Arranque y diagnóstico (paso 1.4)
 
@@ -282,5 +285,29 @@ uv run python scripts/export-openapi.py
 ```
 
 La cola local ejecuta un intento a la vez. Usa un solo proceso coordinador.
-Los registros sobreviven al reinicio, pero la reconstrucción automática del
-trabajo pendiente corresponde a 3.4. El backend Ray aún no admite crear torneos.
+Desde 3.4 el arranque reconstruye el trabajo pendiente desde PostgreSQL.
+El backend Ray aún no admite crear torneos.
+
+## Recuperación y cancelación (etapa 3.4)
+
+Con backend local, el arranque recupera los torneos running con definición
+persistida antes de atender HTTP. Los intentos que quedaron activos pasan a
+lost y sus reemplazos reciben otro ID y una generación mayor. El historial
+consume el presupuesto de `TM_MAX_RETRIES`; reiniciar no lo pone a cero.
+Si no queda presupuesto, el torneo queda blocked sin adjudicar ganador.
+
+Los resultados confirmados se conservan y los torneos completed, blocked o
+cancelled no se reactivan. Cancelar confirma primero PostgreSQL; la detención
+física es de mejor esfuerzo y un fallo al solicitarla no revoca la cancelación.
+Los resultados tardíos siguen sujetos a la validación de vigencia.
+
+```bash
+uv run pytest tests/integration/recovery tests/integration/api/test_recovery.py tests/integration/api/test_restart_process.py tests/unit/test_coordinator_lifecycle.py -q
+```
+
+Las pruebas incluyen cortes SIGKILL de procesos HTTP reales antes y después del
+commit y reutilizan la misma base y directorio. No requieren Docker ni Ray.
+La guía [de operaciones](deploy/OPERATIONS.md) explica el reinicio manual.
+Se mantiene el requisito de un solo coordinador activo por base; no hay elección
+de líder ni exclusión entre instancias. La distribución por red de artefactos
+permanece en 4.2, según el plan original.

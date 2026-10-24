@@ -8,9 +8,8 @@ al llamador, después de que accept() haya retornado (y por tanto confirmado).
 import hashlib
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
-from uuid import uuid4
 
+from tournament_management.application.durable_events import append_event
 from tournament_management.application.errors import ConflictError
 from tournament_management.application.ports import UnitOfWork
 from tournament_management.domain.messages import (
@@ -154,18 +153,7 @@ class PersistentTournamentService:
         match_id: str = "",
         attempt_id: str = "",
     ) -> DomainEvent:
-        event = DomainEvent(
-            event_id=str(uuid4()),
-            tournament_id=tournament_id,
-            match_id=match_id,
-            attempt_id=attempt_id,
-            event_type=event_type,
-            sequence=work.events.next_sequence(tournament_id),
-            occurred_at=datetime.now(UTC).isoformat(),
-            detail=event_type,
-        )
-        work.events.append(event)
-        return event
+        return append_event(work, tournament_id, event_type, match_id, attempt_id)
 
     def _publish(self, event: DomainEvent | None) -> None:
         if self.publish is not None and event is not None:

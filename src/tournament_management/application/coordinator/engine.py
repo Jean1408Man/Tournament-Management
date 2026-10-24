@@ -1,8 +1,4 @@
-"""Cola local de torneos creados durante esta ejecución del coordinador.
-
-Un hilo ordena los torneos y el backend ejecuta un intento a la vez. No se
-reconstruye aquí la cola al arrancar: esa recuperación pertenece a 3.4.
-"""
+"""Cola local reconstruida desde PostgreSQL antes de iniciar el hilo ejecutor."""
 
 import logging
 import threading
@@ -10,8 +6,10 @@ from collections import deque
 from collections.abc import Callable
 
 from tournament_management.application.coordinator.attempt_runner import AttemptRunner
+from tournament_management.application.coordinator.cancellation import request_stop
 from tournament_management.application.coordinator.policy import ExecutionPolicy
 from tournament_management.application.coordinator.queries import TournamentQueries
+from tournament_management.application.coordinator.recovery import StartupRecovery
 from tournament_management.application.persistent_tournament_service import (
     PersistentTournamentService,
 )
@@ -47,6 +45,12 @@ class TournamentCoordinator:
         return self._thread.is_alive() and not self._failed and not self.stopping.is_set()
 
     def start(self) -> None:
+        identifiers = StartupRecovery(
+            self.work_factory, max_retries=self.policy.max_retries
+        ).recover()
+        for tournament_id in identifiers:
+            self.enqueue(tournament_id)
+        logger.info("Recuperación completada: %s torneos pendientes", len(identifiers))
         self._thread.start()
 
     def enqueue(self, tournament_id: str) -> None:
@@ -61,15 +65,16 @@ class TournamentCoordinator:
         # el intervalo entre emitir y publicar el ID activo al hilo HTTP.
         with self._condition:
             if self._current and self._current[0] == tournament_id:
-                self.backend.cancel(self._current[1])
+                request_stop(self.backend, self._current[1])
 
     def close(self) -> None:
         self.stopping.set()
         with self._condition:
             if self._current:
-                self.backend.cancel(self._current[1])
+                request_stop(self.backend, self._current[1])
             self._condition.notify_all()
-        self._thread.join()
+        if self._thread.ident is not None:
+            self._thread.join()
 
     def _loop(self) -> None:
         while not self.stopping.is_set():
@@ -101,6 +106,8 @@ class TournamentCoordinator:
                 generation = work.matches.next_generation(match.match_id)
             attempt = self.policy.attempt(match, generation)
             with self._condition:
+                if self.stopping.is_set():
+                    return
                 try:
                     self.results.issue(attempt)
                 except ValueError:

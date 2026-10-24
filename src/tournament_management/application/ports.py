@@ -63,6 +63,14 @@ class ExecutionBackend(Protocol):
 
 
 class MatchRepository(Protocol):
+    def recovery_rows(self, tournament_id: str) -> list[dict]:
+        """Partidas sin resolver y última generación, bajo el bloqueo del torneo."""
+        ...
+
+    def lose_current(self, match_id: str) -> str | None:
+        """Cierra como perdido el intento anterior y libera su partida para reemplazo."""
+        ...
+
     def bracket_rows(self, tournament_id: str) -> list[dict]: ...
 
     def summary(self, tournament_id: str) -> dict: ...
@@ -108,6 +116,10 @@ class MatchRepository(Protocol):
 
 
 class TournamentRepository(Protocol):
+    def recoverable_ids(self) -> tuple[str, ...]:
+        """Torneos running con definición durable, en orden estable de creación."""
+        ...
+
     def create(self, spec: TournamentSpec) -> None: ...
 
     def get(self, tournament_id: str) -> dict: ...
