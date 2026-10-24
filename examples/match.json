@@ -1,0 +1,26 @@
+{
+  "match": {
+    "tournament_id": "demo",
+    "match_id": "demo-m1",
+    "competitor_ids": ["optimal", "random"],
+    "artifact_hashes": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    "initial_piles": [1, 2],
+    "first_player": 0,
+    "seed": 42
+  },
+  "commands": [
+    [".venv/bin/python", "bots/optimal.py"],
+    [".venv/bin/python", "bots/random_bot.py", "--seed", "7"]
+  ],
+  "attempt": {
+    "attempt_id": "demo-a1",
+    "generation": 1,
+    "turn_timeout_ms": 2000,
+    "match_timeout_ms": 10000,
+    "memory_limit_bytes": 1073741824,
+    "output_limit_bytes": 65536
+  }
+}

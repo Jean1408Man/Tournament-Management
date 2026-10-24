@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command")
     for name, description in {
         "doctor": "Comprueba configuración, versiones y escritura en el directorio de datos.",
-        "serve": "Inicia el servidor mínimo de salud; todavía no ejecuta torneos.",
+        "serve": "Inicia el servidor mínimo de salud.",
         "migrate": "Aplica el esquema pendiente de PostgreSQL.",
     }.items():
         command = commands.add_parser(name, help=description, description=description)
@@ -33,17 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--ray-address", default=None, help="Dirección ray://host:10001")
     probe.add_argument("--expected-workers", type=int, default=2)
     probe.add_argument("--timeout-seconds", type=int, default=30, help="Plazo de las tareas")
-    for name, step in {
-        "match": "2.3",
-        "simulate": "2.4",
-        "verify": "5.2",
-    }.items():
-        command = commands.add_parser(name, help=f"Pendiente del paso {step}")
-        command.set_defaults(pending_step=step)
-        if name in {"match", "simulate"}:
-            command.add_argument("--spec")
-        if name == "verify":
-            command.add_argument("--events")
+    match = commands.add_parser("match", help="Ejecuta una partida local desde una especificación.")
+    match.add_argument("--spec", required=True)
+    simulate = commands.add_parser("simulate", help="Simula un torneo local.")
+    simulate.add_argument("--spec", required=True)
+    verify = commands.add_parser("verify", help="Pendiente del paso 5.2")
+    verify.set_defaults(pending_step="5.2")
+    verify.add_argument("--events")
     return parser
 
 
@@ -67,5 +63,11 @@ def main() -> None:
         return
     if args.command == "migrate":
         command_handlers.migrate(settings, parser)
+        return
+    if args.command == "match":
+        command_handlers.match(settings, args, parser)
+        return
+    if args.command == "simulate":
+        command_handlers.simulate(settings, args)
         return
     command_handlers.serve(settings, parser)

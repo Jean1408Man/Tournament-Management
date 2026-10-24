@@ -133,6 +133,22 @@ La guía [deploy/OPERATIONS.md](deploy/OPERATIONS.md) contiene comandos Docker
 completos, recursos, diagnóstico y prueba de persistencia tras recrear el clúster.
 La ejecución de tareas por worker se verificará en 1.6.
 
+## Simulación local de torneos (etapa 2.4)
+
+```bash
+uv run tm simulate --spec examples/elimination.json
+uv run tm simulate --spec examples/round-robin.json
+```
+
+Eliminación directa avanza por rondas y concede byes sin jugar partidas.
+Round-robin programa cada pareja una sola vez. La clasificación usa victorias
+descendentes y, en caso de empate, el orden de inscripción de los participantes.
+Los ejemplos usan bots del directorio `bots/` y guardan la posición inicial y
+el primer jugador en la especificación. `simulate` imprime un informe JSON:
+`completed` con campeón o clasificación, o `blocked` ante un resultado sin
+ganador (código de salida 1). Esta ejecución es local y secuencial; la
+integración con el backend de intentos corresponde a la etapa 2.5.
+
 ## Organización del código
 
 El paso 1.6 incorpora `tm probe-cluster` y `bash scripts/probe-cluster.sh`:
