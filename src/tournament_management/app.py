@@ -1,26 +1,20 @@
-"""Composición del servicio mínimo; todavía no ejecuta torneos."""
+"""Factoría HTTP y ciclo de vida. La composición concreta vive en runtime.py."""
 
 import logging
 from contextlib import asynccontextmanager
-from tempfile import TemporaryFile
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 
 from tournament_management import __version__
+from tournament_management.adapters.postgres_connection import driver
+from tournament_management.api.errors import install_error_handlers, storage_error
+from tournament_management.api.routers.health import router as health_router
+from tournament_management.api.routes import router as api_router
 from tournament_management.config import Settings
+from tournament_management.runtime import application_services, readiness
+from tournament_management.runtime import check_storage as check_storage
 
 logger = logging.getLogger(__name__)
-
-
-def check_storage(settings: Settings, *, create: bool = False) -> None:
-    """Prueba real de escritura temporal; no crea una base de datos."""
-    path = settings.data_path
-    if create:
-        path.mkdir(parents=True, exist_ok=True)
-    with TemporaryFile(dir=path) as stream:
-        stream.write(b"tm-storage-check")
-        stream.flush()
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -36,46 +30,32 @@ def create_app(settings: Settings) -> FastAPI:
                 connection.connect()
                 logger.info("Conexión Ray Client establecida")
             if settings.database_url:
-                from tournament_management.adapters.postgres_store import check_connection
+                from tournament_management.adapters.postgres_connection import check_schema
 
-                check_connection(settings.database_url)
+                check_schema(settings.database_url)
                 logger.info("Conexión PostgreSQL comprobada")
-            logger.info("Servicio mínimo iniciado")
-            yield
+            with application_services(settings) as services:
+                app.state.services = services
+                logger.info("Servicio HTTP iniciado")
+                yield
         finally:
+            app.state.services = None
             if connection is not None:
                 connection.close()
             logger.info("Servicio detenido limpiamente")
 
-    app = FastAPI(title="Tournament Management", version=__version__, lifespan=lifespan)
-
-    @app.get("/health")
-    def health():
-        return {"status": "alive", "version": __version__}
-
-    @app.get("/ready")
-    def ready():
-        checks = {"storage": "ready", "database": "not_configured", "execution": "not_implemented"}
-        try:
-            check_storage(settings)
-        except OSError:
-            checks["storage"] = "unavailable"
-        if settings.database_url:
-            from tournament_management.adapters.postgres_store import check_connection
-
-            try:
-                check_connection(settings.database_url)
-                checks["database"] = "ready"
-            except OSError:
-                checks["database"] = "unavailable"
-        # Hasta integrar los backends, salud HTTP no implica capacidad de torneos.
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "not_ready",
-                "scope": "tournament_execution",
-                "checks": checks,
-            },
-        )
-
+    app = FastAPI(
+        title="Tournament Management API",
+        version="1.0.0",
+        lifespan=lifespan,
+        openapi_url="/api/v1/openapi.json",
+    )
+    app.state.services = None
+    app.state.package_version = __version__
+    app.state.readiness = lambda: readiness(settings, app.state.services)
+    install_error_handlers(app)
+    psycopg, _ = driver()
+    app.add_exception_handler(psycopg.Error, storage_error)
+    app.include_router(health_router)
+    app.include_router(api_router)
     return app

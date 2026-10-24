@@ -1,79 +1,25 @@
-"""Árbitro local de una partida de Nim entre dos procesos."""
+"""Árbitro local de Nim: procesos, protocolo y resultado deportivo."""
 
 from __future__ import annotations
 
-import json
-import os
-import selectors
-import signal
-import subprocess
+import threading
 import time
-from dataclasses import dataclass
 
 from tournament_management.domain.messages import AttemptOutcome, AttemptSpec, OutcomeKind
+from tournament_management.domain.nim import Move, apply_move, initial_position, is_terminal
 from tournament_management.referee.limits import Limits
-from tournament_management.referee.protocol import encode
+from tournament_management.referee.process_io import BotFault, BotPipes
 
 
-@dataclass
-class _Bot:
-    process: subprocess.Popen[str]
-    command: tuple[str, ...]
-    output_bytes: int = 0
-
-
-def _preexec(memory_limit: int):
-    def configure() -> None:
-        import resource
-
-        resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
-        os.setsid()
-
-    return configure
-
-
-def _terminate(bots: list[_Bot]) -> None:
-    for bot in bots:
-        if bot.process.poll() is None:
-            try:
-                os.killpg(bot.process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                bot.process.kill()
-    for bot in bots:
-        try:
-            bot.process.communicate(timeout=1)
-        except subprocess.TimeoutExpired:
-            bot.process.kill()
-            bot.process.communicate()
-
-
-def _read_line(bot: _Bot, deadline: float, output_limit: int) -> dict[str, object]:
-    selector = selectors.DefaultSelector()
-    try:
-        selector.register(bot.process.stdout, selectors.EVENT_READ)
-        remaining = max(0.0, deadline - time.monotonic())
-        if not selector.select(remaining):
-            raise TimeoutError("timeout")
-        line = bot.process.stdout.readline()
-    finally:
-        selector.close()
-    if not line:
-        raise ValueError("El bot terminó prematuramente")
-    bot.output_bytes += len(line.encode())
-    if bot.output_bytes > output_limit:
-        raise ValueError("Salida del bot demasiado grande")
-    try:
-        message = json.loads(line)
-    except json.JSONDecodeError as exc:
-        raise ValueError("Salida del bot no es JSON") from exc
-    if type(message) is not dict:
-        raise ValueError("El mensaje del bot debe ser un objeto")
-    return message
-
-
-def _send(bot: _Bot, message: dict[str, object]) -> None:
-    bot.process.stdin.write(encode(message))
-    bot.process.stdin.flush()
+def _outcome(
+    attempt: AttemptSpec, worker_id: str, kind: OutcomeKind,
+    winner_id: str, reason: str,
+) -> AttemptOutcome:
+    return AttemptOutcome(
+        match_id=attempt.match.match_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, worker_id=worker_id,
+        kind=kind, winner_id=winner_id, reason=reason,
+    )
 
 
 def run_match(
@@ -82,89 +28,93 @@ def run_match(
     *,
     worker_id: str = "local",
     limits: Limits | None = None,
+    cancel: threading.Event | None = None,
 ) -> AttemptOutcome:
-    """Ejecuta y arbitra una partida, clasificando fallos deportivos."""
+    """Juega una partida y limpia ambos grupos de procesos en cualquier salida."""
     limits = limits or Limits(
         turn_timeout_ms=attempt.turn_timeout_ms,
         match_timeout_ms=attempt.match_timeout_ms,
         memory_limit_bytes=attempt.memory_limit_bytes,
         output_limit_bytes=attempt.output_limit_bytes,
     )
-    bots: list[_Bot] = []
-    start = time.monotonic()
+    pipes = BotPipes(limits.memory_limit_bytes, limits.output_limit_bytes)
+    match_deadline = time.monotonic() + limits.match_timeout_ms / 1000
     try:
-        for command in commands:
-            process = subprocess.Popen(
-                list(command), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, text=True, bufsize=1,
-                start_new_session=True,
+        if len(commands) != 2:
+            raise ValueError("Se requieren dos comandos de bot")
+        for player, command in enumerate(commands):
+            if cancel is not None and cancel.is_set():
+                raise InterruptedError("cancelled")
+            pipes.start(command, player)
+        for player in (0, 1):
+            pipes.send(
+                player, {"type": "hello", "protocol": "nim-jsonl", "version": 1},
+                match_deadline, cancel,
             )
-            bots.append(_Bot(process, command))
-        for bot in bots:
-            _send(bot, {"type": "hello", "protocol": "nim-jsonl", "version": 1})
-            ready = _read_line(
-                bot, start + limits.turn_timeout_ms / 1000, limits.output_limit_bytes
+        faults: list[BotFault] = []
+        for player in (0, 1):
+            try:
+                ready = pipes.read(
+                    player, min(match_deadline, time.monotonic() + limits.turn_timeout_ms / 1000),
+                    cancel,
+                )
+                if ready != {"type": "ready", "protocol": "nim-jsonl", "version": 1}:
+                    raise BotFault(player, "Respuesta ready inválida")
+            except BotFault as exc:
+                faults.append(exc)
+        if len({fault.player for fault in faults}) == 2:
+            return _outcome(attempt, worker_id, OutcomeKind.NO_WINNER, "", "both bots failed")
+        if faults:
+            fault = faults[0]
+            return _outcome(
+                attempt, worker_id, OutcomeKind.BOT_FAILURE,
+                attempt.match.competitor_ids[1 - fault.player], str(fault),
             )
-            if ready != {"type": "ready", "protocol": "nim-jsonl", "version": 1}:
-                raise ValueError("Respuesta ready inválida")
-        position = list(attempt.match.initial_piles)
-        player = attempt.match.first_player
-        for index, bot in enumerate(bots):
-            _send(bot, {
+
+        position = initial_position(attempt.match.initial_piles, attempt.match.first_player)
+        for player in (0, 1):
+            pipes.send(player, {
                 "type": "start", "game_id": attempt.match.match_id,
-                "player": index, "piles": position, "your_turn": index == player,
-            })
+                "player": player, "piles": list(position.piles),
+                "your_turn": player == position.player,
+            }, match_deadline, cancel)
         turn = 0
-        while any(position):
-            if time.monotonic() - start > limits.match_timeout_ms / 1000:
-                raise TimeoutError("timeout de partida")
-            bot = bots[player]
-            _send(bot, {"type": "turn", "turn": turn, "piles": position, "your_turn": True})
-            move = _read_line(
-                bot, time.monotonic() + limits.turn_timeout_ms / 1000, limits.output_limit_bytes
-            )
-            if set(move) != {"type", "pile", "count"} or move["type"] != "move":
-                raise ValueError("Movimiento inválido")
-            pile, count = move["pile"], move["count"]
-            if type(pile) is not int or type(count) is not int or not 0 <= pile < len(position):
-                raise ValueError("Movimiento inválido")
-            if count <= 0 or count > position[pile]:
-                raise ValueError("Movimiento ilegal")
-            position[pile] -= count
+        while not is_terminal(position):
+            player = position.player
+            deadline = min(match_deadline, time.monotonic() + limits.turn_timeout_ms / 1000)
+            pipes.send(player, {
+                "type": "turn", "turn": turn, "piles": list(position.piles),
+                "your_turn": True,
+            }, deadline, cancel)
+            message = pipes.read(player, deadline, cancel)
+            if set(message) != {"type", "pile", "count"} or message["type"] != "move":
+                raise BotFault(player, "Movimiento inválido")
+            try:
+                position = apply_move(position, Move(message["pile"], message["count"]))
+            except (ValueError, TypeError) as exc:
+                raise BotFault(player, "Movimiento ilegal") from exc
             turn += 1
-            player = 1 - player
-        for bot in bots:
-            _send(
-                bot,
-                {"type": "game_over", "result": "win", "winner": 1 - player, "reason": "last_move"},
-            )
-        return AttemptOutcome(
-            match_id=attempt.match.match_id, attempt_id=attempt.attempt_id,
-            generation=attempt.generation, worker_id=worker_id,
-            kind=OutcomeKind.COMPLETED,
-            winner_id=attempt.match.competitor_ids[1 - player], reason="last_move",
+        winner = 1 - position.player
+        for player in (0, 1):
+            try:
+                pipes.send(player, {
+                    "type": "game_over", "result": "win" if player == winner else "loss",
+                    "winner": winner, "reason": "last_move",
+                }, match_deadline, cancel)
+            except BotFault:
+                pass  # La partida ya terminó con un ganador válido.
+        return _outcome(
+            attempt, worker_id, OutcomeKind.COMPLETED,
+            attempt.match.competitor_ids[winner], "last_move",
         )
-    except TimeoutError as exc:
-        winner = (
-            attempt.match.competitor_ids[1 - player]
-            if "player" in locals()
-            else attempt.match.competitor_ids[1]
+    except BotFault as exc:
+        return _outcome(
+            attempt, worker_id, OutcomeKind.BOT_FAILURE,
+            attempt.match.competitor_ids[1 - exc.player], str(exc),
         )
-        return AttemptOutcome(
-            match_id=attempt.match.match_id, attempt_id=attempt.attempt_id,
-            generation=attempt.generation, worker_id=worker_id,
-            kind=OutcomeKind.BOT_FAILURE, winner_id=winner, reason=str(exc),
-        )
-    except (OSError, ValueError) as exc:
-        winner = (
-            attempt.match.competitor_ids[1 - player]
-            if "player" in locals()
-            else attempt.match.competitor_ids[1]
-        )
-        return AttemptOutcome(
-            match_id=attempt.match.match_id, attempt_id=attempt.attempt_id,
-            generation=attempt.generation, worker_id=worker_id,
-            kind=OutcomeKind.BOT_FAILURE, winner_id=winner, reason=str(exc),
+    except (OSError, InterruptedError, ValueError) as exc:
+        return _outcome(
+            attempt, worker_id, OutcomeKind.INFRASTRUCTURE_FAILURE, "", str(exc),
         )
     finally:
-        _terminate(bots)
+        pipes.close()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from tournament_management.domain.formats.elimination import Elimination
 from tournament_management.domain.formats.round_robin import RoundRobin
@@ -63,7 +63,12 @@ def run_tournament(
                 memory_limit_bytes=limits[2], output_limit_bytes=limits[3],
             )
             outcome = execute(attempt, pairing)
-            outcome.validate_for(attempt)
+            # El scheduler puede devolver un reintento distinto del inicial.
+            if outcome.match_id != match.match_id or outcome.generation < attempt.generation:
+                raise ValueError("El resultado no corresponde a la partida")
+            outcome.validate_for(replace(
+                attempt, attempt_id=outcome.attempt_id, generation=outcome.generation,
+            ))
             results.append({
                 "match_id": pairing.match_id, "competitors": pairing.competitors,
                 "kind": outcome.kind.value, "winner_id": outcome.winner_id or None,

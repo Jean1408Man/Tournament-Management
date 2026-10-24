@@ -10,7 +10,7 @@ if [[ -f "$TM_ENV_FILE" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ -z "$line" || "$line" == \#* ]] && continue
-    if [[ "$line" =~ ^(TM_IMAGE|TM_POSTGRES_IMAGE|TM_POSTGRES_PASSWORD|TM_API_PORT|TM_START_TIMEOUT)=(.*)$ ]]; then
+    if [[ "$line" =~ ^(TM_IMAGE|TM_POSTGRES_IMAGE|TM_POSTGRES_PASSWORD|TM_API_PORT|TM_START_TIMEOUT|TM_ARTIFACT_MAX_BYTES|TM_BACKEND)=(.*)$ ]]; then
       key="${BASH_REMATCH[1]}"
       value="${BASH_REMATCH[2]}"
       if [[ ! -v "$key" ]]; then
@@ -27,6 +27,7 @@ TM_CONTAINERS=(tm-postgres tm-head tm-worker-1 tm-worker-2 tm-coordinator)
 TM_POSTGRES_IMAGE="${TM_POSTGRES_IMAGE:-postgres:16.6-bookworm}"
 TM_POSTGRES_PASSWORD="${TM_POSTGRES_PASSWORD:-}"
 TM_START_TIMEOUT="${TM_START_TIMEOUT:-180}"
+TM_ARTIFACT_MAX_BYTES="${TM_ARTIFACT_MAX_BYTES:-1048576}"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 

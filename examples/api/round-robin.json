@@ -1,0 +1,17 @@
+{
+  "tournament_id": "demo-http-round-robin",
+  "format": "round_robin",
+  "competitor_ids": [
+    "a",
+    "b",
+    "c",
+    "d"
+  ],
+  "initial_piles": [
+    3,
+    5,
+    7
+  ],
+  "first_player": 0,
+  "seed": 42
+}

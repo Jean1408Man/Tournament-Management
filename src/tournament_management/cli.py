@@ -17,8 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command")
     for name, description in {
         "doctor": "Comprueba configuración, versiones y escritura en el directorio de datos.",
-        "serve": "Inicia el servidor mínimo de salud.",
+        "serve": "Inicia la API v1 y el coordinador de ejecución configurado.",
         "migrate": "Aplica el esquema pendiente de PostgreSQL.",
+        "register-bot": "Registra un nuevo archivo Python y sus metadatos durables.",
+        "inspect-bot": "Consulta un bot registrado y comprueba sus bytes.",
+        "verify-artifact": "Verifica por hash un artefacto del volumen interno.",
     }.items():
         command = commands.add_parser(name, help=description, description=description)
         for field in fields(Settings):
@@ -27,6 +30,18 @@ def build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help=f"Variable TM_{field.name.upper()}",
             )
+        if name == "register-bot":
+            command.add_argument("--file", required=True)
+            command.add_argument("--name", required=True)
+            command.add_argument("--competitor-id")
+            command.add_argument("--idempotency-key", required=True)
+            command.add_argument("--protocol", default="nim-jsonl")
+            command.add_argument("--protocol-version", type=int, default=1)
+            command.add_argument("--runtime", default="python3.12")
+        elif name == "inspect-bot":
+            command.add_argument("--competitor-id", required=True)
+        elif name == "verify-artifact":
+            command.add_argument("--artifact-hash", required=True)
     probe = commands.add_parser(
         "probe-cluster", help="Ejecuta una tarea de diagnóstico en cada worker Ray."
     )
@@ -55,6 +70,9 @@ def main() -> None:
         settings = Settings.load(vars(args), os.environ)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.command in {"register-bot", "inspect-bot", "verify-artifact"}:
+        command_handlers.registry(settings, args, parser)
+        return
     if args.command == "doctor":
         command_handlers.doctor(settings)
         return

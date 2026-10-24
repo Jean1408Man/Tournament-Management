@@ -1,5 +1,10 @@
 import sys
+import threading
+import time
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from tournament_management.domain.messages import AttemptSpec, MatchSpec, OutcomeKind
 from tournament_management.referee.runner import run_match
@@ -40,6 +45,57 @@ def test_illegal_bot_loses_without_leaking_processes():
     result = run_match(
         attempt(),
         (command("bots/faulty/illegal_move.py"), command("bots/optimal.py")),
+    )
+    assert result.kind is OutcomeKind.BOT_FAILURE
+    assert result.winner_id == "random"
+
+
+@pytest.mark.parametrize(
+    "faulty",
+    [
+        "invalid_output.py", "premature_exit.py", "too_much_output.py",
+        "stderr_flood.py", "timeout.py",
+    ],
+)
+def test_faulty_bot_loses_and_returns_within_deadline(faulty):
+    started = time.monotonic()
+    result = run_match(
+        attempt(),
+        (command(f"bots/faulty/{faulty}"), command("bots/optimal.py")),
+    )
+    assert result.kind is OutcomeKind.BOT_FAILURE
+    assert result.winner_id == "random"
+    assert time.monotonic() - started < 3
+
+
+def test_both_bots_fail_without_inventing_winner():
+    result = run_match(
+        attempt(),
+        (command("bots/faulty/premature_exit.py"), command("bots/faulty/invalid_output.py")),
+    )
+    assert result.kind is OutcomeKind.NO_WINNER
+    assert result.winner_id == ""
+
+
+def test_cancel_interrupts_silent_bot_and_reaps_processes():
+    cancel = threading.Event()
+    holder = []
+    thread = threading.Thread(target=lambda: holder.append(run_match(
+        attempt(), (command("bots/faulty/timeout.py"), command("bots/optimal.py")),
+        cancel=cancel,
+    )))
+    thread.start()
+    time.sleep(0.1)
+    cancel.set()
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert holder[0].kind is OutcomeKind.INFRASTRUCTURE_FAILURE
+
+
+def test_memory_limit_rejects_bot_allocation():
+    spec = replace(attempt(), memory_limit_bytes=64 * 1024 * 1024)
+    result = run_match(
+        spec, (command("bots/faulty/memory_hog.py"), command("bots/optimal.py")),
     )
     assert result.kind is OutcomeKind.BOT_FAILURE
     assert result.winner_id == "random"

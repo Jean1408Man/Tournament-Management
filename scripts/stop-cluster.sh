@@ -14,4 +14,4 @@ for name in "${targets[@]}"; do
   docker stop --timeout 20 "$name"
   docker container rm "$name"
 done
-printf 'Contenedores retirados. tm-state, tm-postgres-data y tm-net se conservan para el próximo arranque.\n'
+printf 'Contenedores retirados. tm-state, tm-postgres-data, tm-artifacts y tm-net se conservan para el próximo arranque.\n'

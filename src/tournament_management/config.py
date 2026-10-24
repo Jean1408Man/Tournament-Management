@@ -20,6 +20,7 @@ class Settings:
     attempt_timeout_ms: int = 90000
     memory_limit_bytes: int = 268435456
     output_limit_bytes: int = 1048576
+    artifact_max_bytes: int = 1048576
     max_retries: int = 3
     retry_delay_ms: int = 1000
 
@@ -43,6 +44,7 @@ class Settings:
             "attempt_timeout_ms",
             "memory_limit_bytes",
             "output_limit_bytes",
+            "artifact_max_bytes",
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"TM_{name.upper()} debe ser positivo")

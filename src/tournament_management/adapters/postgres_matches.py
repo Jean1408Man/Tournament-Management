@@ -1,15 +1,37 @@
-"""Repositorio PostgreSQL de partidas e intentos."""
+"""Partidas e intentos: serialización con cancelación, reintentos y resultados."""
 
 from typing import Any
 
+from tournament_management.adapters.postgres_attempt_failures import PostgresAttemptFailures
+from tournament_management.adapters.postgres_match_queries import PostgresMatchQueries
+from tournament_management.adapters.postgres_tournaments import _PostgresTournaments
 from tournament_management.application.ports import MatchRepository
-from tournament_management.domain.messages import AttemptOutcome, AttemptSpec, MatchSpec
-from tournament_management.domain.states import AttemptState, MatchState, TournamentState
+from tournament_management.domain.messages import (
+    AttemptOutcome,
+    AttemptSpec,
+    MatchSpec,
+    OutcomeKind,
+)
+from tournament_management.domain.states import (
+    AttemptState,
+    MatchState,
+    TournamentState,
+    transition,
+)
 
 
-class _PostgresMatches(MatchRepository):
+class _PostgresMatches(PostgresMatchQueries, PostgresAttemptFailures, MatchRepository):
     def __init__(self, connection: Any) -> None:
         self.connection = connection
+
+    def _lock(self, match_id: str) -> dict:
+        # La especificación es inmutable; esta primera lectura solo localiza el torneo.
+        match = self.get(match_id)
+        tournament = _PostgresTournaments(self.connection).lock(match.tournament_id)
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM matches WHERE match_id = %s FOR UPDATE", (match_id,))
+            row = cursor.fetchone()
+        return {**row, "tournament_state": tournament["state"]}
 
     def get(self, match_id: str) -> MatchSpec:
         with self.connection.cursor() as cursor:
@@ -19,14 +41,21 @@ class _PostgresMatches(MatchRepository):
             raise KeyError(match_id)
         return MatchSpec.from_dict(row["spec"])
 
+    def pending(self, tournament_id: str) -> tuple[MatchSpec, ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT spec FROM matches WHERE tournament_id = %s AND state = %s "
+                "ORDER BY match_id",
+                (tournament_id, MatchState.READY.value),
+            )
+            return tuple(MatchSpec.from_dict(row["spec"]) for row in cursor.fetchall())
+
     def current_attempt(self, match_id: str) -> AttemptSpec | None:
         with self.connection.cursor() as cursor:
             cursor.execute(
-                """
-                SELECT a.spec FROM matches m
-                LEFT JOIN attempts a ON a.attempt_id = m.current_attempt_id
-                WHERE m.match_id = %s
-                """,
+                """SELECT a.spec FROM matches m
+                   LEFT JOIN attempts a ON a.attempt_id = m.current_attempt_id
+                   WHERE m.match_id = %s""",
                 (match_id,),
             )
             row = cursor.fetchone()
@@ -35,22 +64,40 @@ class _PostgresMatches(MatchRepository):
         return None if row["spec"] is None else AttemptSpec.from_dict(row["spec"])
 
     def add_attempt(self, attempt: AttemptSpec) -> None:
+        row = self._lock(attempt.match.match_id)
+        if (
+            MatchSpec.from_dict(row["spec"]) != attempt.match
+            or row["tournament_state"] != TournamentState.RUNNING.value
+            or row["state"] not in {MatchState.READY.value, MatchState.RUNNING.value}
+            or row["accepted_attempt_id"] is not None
+        ):
+            raise ValueError("La partida no acepta más intentos")
         with self.connection.cursor() as cursor:
+            # Se bloquea la partida incluso cuando aún no hay intentos. Bloquear
+            # solo el último intento dejaba una carrera al emitir la generación 1.
             cursor.execute(
-                """
-                SELECT generation FROM attempts WHERE match_id = %s
-                ORDER BY generation DESC LIMIT 1 FOR UPDATE
-                """,
+                "SELECT COALESCE(MAX(generation), 0) AS generation "
+                "FROM attempts WHERE match_id = %s",
                 (attempt.match.match_id,),
             )
-            previous = cursor.fetchone()
-            if previous is not None and attempt.generation <= previous["generation"]:
+            if attempt.generation <= cursor.fetchone()["generation"]:
                 raise ValueError("La generación del intento debe aumentar")
+            if row["current_attempt_id"]:
+                cursor.execute(
+                    """UPDATE attempts SET state = CASE WHEN state = %s THEN %s ELSE %s END
+                       WHERE attempt_id = %s AND state IN (%s, %s)""",
+                    (
+                        AttemptState.QUEUED.value,
+                        AttemptState.EXPIRED.value,
+                        AttemptState.DISCARDED.value,
+                        row["current_attempt_id"],
+                        AttemptState.QUEUED.value,
+                        AttemptState.RUNNING.value,
+                    ),
+                )
             cursor.execute(
-                """
-                INSERT INTO attempts (attempt_id, match_id, generation, state, spec)
-                VALUES (%s, %s, %s, %s, %s::jsonb)
-                """,
+                """INSERT INTO attempts (attempt_id, match_id, generation, state, spec)
+                   VALUES (%s, %s, %s, %s, %s::jsonb)""",
                 (
                     attempt.attempt_id,
                     attempt.match.match_id,
@@ -63,66 +110,132 @@ class _PostgresMatches(MatchRepository):
                 "UPDATE matches SET current_attempt_id = %s WHERE match_id = %s",
                 (attempt.attempt_id, attempt.match.match_id),
             )
-            if cursor.rowcount != 1:
-                raise KeyError(attempt.match.match_id)
 
     def try_accept(self, outcome: AttemptOutcome) -> bool:
-        """Acepta solo el intento vigente y bloquea la fila de la partida."""
+        try:
+            row = self._lock(outcome.match_id)
+        except KeyError:
+            return False
+        if (
+            row["current_attempt_id"] != outcome.attempt_id
+            or row["accepted_attempt_id"] is not None
+            or row["state"] != MatchState.RUNNING.value
+            or row["tournament_state"] != TournamentState.RUNNING.value
+            or outcome.kind not in {OutcomeKind.COMPLETED, OutcomeKind.BOT_FAILURE}
+        ):
+            return False
         with self.connection.cursor() as cursor:
             cursor.execute(
-                """
-                SELECT m.current_attempt_id, m.state AS match_state, t.state AS tournament_state,
-                       a.generation, a.state AS attempt_state, a.spec
-                FROM matches m
-                JOIN tournaments t ON t.tournament_id = m.tournament_id
-                JOIN attempts a ON a.attempt_id = %s
-                WHERE m.match_id = %s
-                FOR UPDATE OF m, a, t
-                """,
-                (outcome.attempt_id, outcome.match_id),
+                "SELECT state, spec FROM attempts WHERE attempt_id = %s FOR UPDATE",
+                (outcome.attempt_id,),
             )
-            row = cursor.fetchone()
-            if row is None or row["current_attempt_id"] != outcome.attempt_id:
+            attempt_row = cursor.fetchone()
+            if attempt_row["state"] != AttemptState.RUNNING.value:
                 return False
-            if row["generation"] != outcome.generation:
-                return False
-            if (
-                row["match_state"] != MatchState.RUNNING.value
-                or row["tournament_state"] != TournamentState.RUNNING.value
-            ):
-                return False
-            if row["attempt_state"] != AttemptState.RUNNING.value:
-                return False
-            attempt = AttemptSpec.from_dict(row["spec"])
             try:
-                outcome.validate_for(attempt)
+                outcome.validate_for(AttemptSpec.from_dict(attempt_row["spec"]))
             except ValueError:
                 return False
-            if outcome.kind.value not in {"completed", "bot_failure"}:
-                return False
             cursor.execute(
-                """
-                UPDATE attempts SET state = %s, outcome = %s::jsonb
-                WHERE attempt_id = %s AND state = %s
-                """,
+                "UPDATE attempts SET state = %s, outcome = %s::jsonb WHERE attempt_id = %s",
+                (AttemptState.ACCEPTED.value, outcome.to_json(), outcome.attempt_id),
+            )
+            cursor.execute(
+                """INSERT INTO results (match_id, attempt_id, tournament_id, sequence, outcome)
+                   SELECT %s, %s, %s, COALESCE(MAX(sequence), 0) + 1, %s::jsonb
+                   FROM results WHERE tournament_id = %s""",
                 (
-                    AttemptState.ACCEPTED.value,
-                    outcome.to_json(),
+                    outcome.match_id,
                     outcome.attempt_id,
+                    row["tournament_id"],
+                    outcome.to_json(),
+                    row["tournament_id"],
+                ),
+            )
+        return True
+
+    def accepted(self, match_id: str) -> AttemptOutcome | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT outcome FROM results WHERE match_id = %s", (match_id,))
+            row = cursor.fetchone()
+        return None if row is None else AttemptOutcome.from_dict(row["outcome"])
+
+    def invalidate(self, match_id: str, attempt_id: str) -> bool:
+        row = self._lock(match_id)
+        if (
+            row["current_attempt_id"] != attempt_id
+            or row["accepted_attempt_id"] is not None
+            or row["state"] != MatchState.RUNNING.value
+        ):
+            return False
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE attempts SET state = %s WHERE attempt_id = %s AND state IN (%s, %s)",
+                (
+                    AttemptState.EXPIRED.value,
+                    attempt_id,
+                    AttemptState.QUEUED.value,
                     AttemptState.RUNNING.value,
                 ),
             )
-            return cursor.rowcount == 1
+            cursor.execute(
+                "UPDATE matches SET state = %s, current_attempt_id = NULL WHERE match_id = %s",
+                (MatchState.READY.value, match_id),
+            )
+        return True
 
     def set_state(self, match_id: str, state: MatchState) -> None:
-        self._set("matches", "match_id", match_id, state.value)
+        row = self._lock(match_id)
+        transition(MatchState(row["state"]), state)
+        with self.connection.cursor() as cursor:
+            cursor.execute("UPDATE matches SET state = %s WHERE match_id = %s", (state, match_id))
 
     def set_attempt_state(self, attempt_id: str, state: AttemptState) -> None:
-        self._set("attempts", "attempt_id", attempt_id, state.value)
-
-    def _set(self, table: str, key: str, identifier: str, state: str) -> None:
         with self.connection.cursor() as cursor:
-            cursor.execute(f"UPDATE {table} SET state = %s WHERE {key} = %s", (state, identifier))
-            if cursor.rowcount != 1:
-                raise KeyError(identifier)
+            cursor.execute("SELECT match_id FROM attempts WHERE attempt_id = %s", (attempt_id,))
+            row = cursor.fetchone()
+        if row is None:
+            raise KeyError(attempt_id)
+        self._lock(row["match_id"])
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT state FROM attempts WHERE attempt_id = %s FOR UPDATE", (attempt_id,)
+            )
+            transition(AttemptState(cursor.fetchone()["state"]), state)
+            cursor.execute(
+                "UPDATE attempts SET state = %s WHERE attempt_id = %s", (state, attempt_id)
+            )
 
+    def start(self, match_id: str) -> None:
+        row = self._lock(match_id)
+        if row["state"] == MatchState.READY.value:
+            self.set_state(match_id, MatchState.RUNNING)
+        elif row["state"] != MatchState.RUNNING.value:
+            raise ValueError("La partida no puede iniciarse")
+
+    def cancel_pending(self, tournament_id: str) -> None:
+        _PostgresTournaments(self.connection).lock(tournament_id)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE attempts SET state = %s WHERE match_id IN
+                   (SELECT match_id FROM matches WHERE tournament_id = %s)
+                   AND state IN (%s, %s)""",
+                (
+                    AttemptState.CANCELLED.value,
+                    tournament_id,
+                    AttemptState.QUEUED.value,
+                    AttemptState.RUNNING.value,
+                ),
+            )
+            cursor.execute(
+                """UPDATE matches SET state = %s, current_attempt_id = NULL
+                   WHERE tournament_id = %s AND state IN (%s, %s, %s, %s)""",
+                (
+                    MatchState.CANCELLED.value,
+                    tournament_id,
+                    MatchState.WAITING.value,
+                    MatchState.READY.value,
+                    MatchState.RUNNING.value,
+                    MatchState.BLOCKED.value,
+                ),
+            )

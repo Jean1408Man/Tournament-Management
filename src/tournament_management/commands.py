@@ -14,6 +14,9 @@ from tournament_management.config import Settings
 
 
 def simulate(settings: Settings, args: argparse.Namespace) -> None:
+    from tournament_management.adapters.local_execution import LocalExecution
+    from tournament_management.application.result_service import ResultService
+    from tournament_management.application.scheduler import Scheduler
     from tournament_management.application.tournament_service import Competitor, run_tournament
     from tournament_management.referee.runner import run_match
 
@@ -21,7 +24,12 @@ def simulate(settings: Settings, args: argparse.Namespace) -> None:
         with open(args.spec, encoding="utf-8") as stream:
             data = json.load(stream)
         if type(data) is not dict or set(data) != {
-            "tournament_id", "format", "competitors", "initial_piles", "first_player", "seed"
+            "tournament_id",
+            "format",
+            "competitors",
+            "initial_piles",
+            "first_player",
+            "seed",
         }:
             raise ValueError("Campos del torneo inválidos")
         if type(data["competitors"]) is not list:
@@ -50,20 +58,35 @@ def simulate(settings: Settings, args: argparse.Namespace) -> None:
         if type(data["seed"]) is not int:
             raise ValueError("seed debe ser un entero")
 
-        def execute(attempt, pairing):
+        def execute_attempt(attempt, cancel):
             commands = tuple(
                 (sys.executable, str(paths[competitor_id]))
-                for competitor_id in pairing.competitors
+                for competitor_id in attempt.match.competitor_ids
             )
-            return run_match(attempt, commands)
+            return run_match(attempt, commands, cancel=cancel)
 
-        report = run_tournament(
-            data["tournament_id"], data["format"], tuple(competitors),
-            tuple(data["initial_piles"]), data["first_player"], data["seed"],
-            (settings.turn_timeout_ms, settings.match_timeout_ms,
-             settings.memory_limit_bytes, settings.output_limit_bytes),
-            execute,
-        )
+        with LocalExecution(execute_attempt) as backend:
+            scheduler = Scheduler(
+                backend,
+                ResultService(),
+                max_retries=settings.max_retries,
+                attempt_timeout_ms=settings.attempt_timeout_ms,
+            )
+            report = run_tournament(
+                data["tournament_id"],
+                data["format"],
+                tuple(competitors),
+                tuple(data["initial_piles"]),
+                data["first_player"],
+                data["seed"],
+                (
+                    settings.turn_timeout_ms,
+                    settings.match_timeout_ms,
+                    settings.memory_limit_bytes,
+                    settings.output_limit_bytes,
+                ),
+                lambda attempt, pairing: scheduler.run_match(attempt),
+            )
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"status": "error", "kind": "invalid_spec", "error": str(exc)}))
         raise SystemExit(2) from exc
@@ -170,5 +193,48 @@ def serve(settings: Settings, parser: argparse.ArgumentParser) -> None:
     import uvicorn
 
     uvicorn.run(
-        create_app(settings), host=settings.http_host, port=settings.http_port, log_config=None
+        create_app(settings), host=settings.http_host, port=settings.http_port, log_config=None,
+        timeout_graceful_shutdown=5,
     )
+
+
+def registry(settings: Settings, args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Herramientas de 3.2; el registro HTTP de archivos se añadirá en 3.3."""
+    from tournament_management.adapters.artifact_store import FileArtifactStore
+    from tournament_management.adapters.postgres_store import PostgresUnitOfWork
+    from tournament_management.application.competitor_service import CompetitorService
+
+    if args.command != "verify-artifact" and not settings.database_url:
+        parser.error("Este comando requiere --database-url o TM_DATABASE_URL")
+    store = FileArtifactStore(
+        settings.data_path / "artifacts",
+        max_bytes=settings.artifact_max_bytes,
+    )
+    service = CompetitorService(
+        lambda: PostgresUnitOfWork(settings.database_url),
+        store,
+        max_bytes=settings.artifact_max_bytes,
+    )
+    try:
+        if args.command == "verify-artifact":
+            content = store.get(args.artifact_hash)
+            report = {"artifact_hash": args.artifact_hash, "size_bytes": len(content)}
+        elif args.command == "inspect-bot":
+            report = json.loads(service.get(args.competitor_id).to_json())
+        else:
+            with Path(args.file).open("rb") as source:
+                registered = service.register(
+                    source,
+                    filename=Path(args.file).name,
+                    name=args.name,
+                    competitor_id=args.competitor_id,
+                    idempotency_key=args.idempotency_key,
+                    protocol=args.protocol,
+                    protocol_version=args.protocol_version,
+                    runtime=args.runtime,
+                )
+            report = json.loads(registered.to_json())
+    except (OSError, ValueError, KeyError) as exc:
+        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
+        raise SystemExit(1) from exc
+    print(json.dumps({"status": "ok", **report}, ensure_ascii=False))
