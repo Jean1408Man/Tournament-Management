@@ -6,7 +6,10 @@ if (($#)); then shift; fi
 case "$role" in
   coordinator)
     export TM_ROLE=coordinator
-    exec tm serve --backend ray --ray-address "${TM_RAY_ADDRESS:-ray://tm-head:10001}" \
+    if [[ -n "${TM_DATABASE_URL:-}" ]]; then
+      tm migrate --database-url "$TM_DATABASE_URL"
+    fi
+    exec tm serve --backend "${TM_BACKEND:-local}" --ray-address "${TM_RAY_ADDRESS:-ray://tm-head:10001}" \
       --http-host 0.0.0.0 "$@"
     ;;
   ray-head)

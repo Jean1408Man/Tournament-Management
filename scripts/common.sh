@@ -4,11 +4,30 @@ set -euo pipefail
 
 TM_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TM_PROJECT_DIR="$(cd -- "$TM_SCRIPT_DIR/.." && pwd)"
+# Leer solo datos, sin ejecutar el archivo como código shell. El entorno prevalece.
+TM_ENV_FILE="${TM_ENV_FILE:-$TM_PROJECT_DIR/.env}"
+if [[ -f "$TM_ENV_FILE" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if [[ "$line" =~ ^(TM_IMAGE|TM_POSTGRES_IMAGE|TM_POSTGRES_PASSWORD|TM_API_PORT|TM_START_TIMEOUT|TM_ARTIFACT_MAX_BYTES|TM_BACKEND)=(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      value="${BASH_REMATCH[2]}"
+      if [[ ! -v "$key" ]]; then
+        printf -v "$key" '%s' "$value"
+        export "$key"
+      fi
+    fi
+  done < "$TM_ENV_FILE"
+fi
 TM_IMAGE="${TM_IMAGE:-tournament-management:step-1.5}"
 TM_LABEL_KEY="org.tournament-management.project"
 TM_LABEL_VALUE="tournament-management"
-TM_CONTAINERS=(tm-head tm-worker-1 tm-worker-2 tm-coordinator)
+TM_CONTAINERS=(tm-postgres tm-head tm-worker-1 tm-worker-2 tm-coordinator)
+TM_POSTGRES_IMAGE="${TM_POSTGRES_IMAGE:-postgres:16.6-bookworm}"
+TM_POSTGRES_PASSWORD="${TM_POSTGRES_PASSWORD:-}"
 TM_START_TIMEOUT="${TM_START_TIMEOUT:-180}"
+TM_ARTIFACT_MAX_BYTES="${TM_ARTIFACT_MAX_BYTES:-1048576}"
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 

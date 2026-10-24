@@ -1,0 +1,13 @@
+{
+  "tournament_id": "demo-round-robin",
+  "format": "round_robin",
+  "competitors": [
+    {"id": "a", "bot": "optimal.py"},
+    {"id": "b", "bot": "random_bot.py"},
+    {"id": "c", "bot": "optimal.py"},
+    {"id": "d", "bot": "random_bot.py"}
+  ],
+  "initial_piles": [1, 2, 3],
+  "first_player": 0,
+  "seed": 42
+}

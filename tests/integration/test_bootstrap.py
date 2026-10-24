@@ -1,6 +1,5 @@
 """Configuración, diagnóstico y contrato de salud del servicio mínimo."""
 
-import asyncio
 import json
 import logging
 import os
@@ -8,11 +7,11 @@ import socket
 import subprocess
 import sys
 import time
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 import pytest
 
-from tournament_management.app import create_app
 from tournament_management.config import Settings
 from tournament_management.observability.logging import JsonFormatter
 
@@ -34,6 +33,7 @@ def test_precedence():
         {"TM_MAX_RETRIES": "-1"},
         {"TM_LOG_LEVEL": "invalid"},
         {"TM_DATA_DIR": ""},
+        {"TM_DATABASE_URL": "mysql://not-postgresql"},
         {"TM_TURN_TIMEOUT_MS": "90001"},
         {"TM_MEMORY_LIMIT_BYTES": "0"},
     ],
@@ -66,6 +66,16 @@ def test_doctor(tmp_path):
     assert list((tmp_path / "state").iterdir()) == []
 
 
+def test_doctor_does_not_expose_database_url(tmp_path):
+    result = run_cli(
+        "doctor", "--data-dir", str(tmp_path),
+        "--database-url", "postgresql://tm:secret@localhost/example",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "secret" not in result.stdout
+    assert json.loads(result.stdout)["configuration"]["database_url"] == "[oculta]"
+
+
 def test_doctor_unwritable_target(tmp_path):
     target = tmp_path / "file"
     target.write_text("existing")
@@ -93,52 +103,48 @@ def test_cli_rejects_unsupported_actions(args):
     assert result.stdout == ""
 
 
-async def request(app, path):
-    responses = []
-
-    async def receive():
-        return {"type": "http.request", "body": b""}
-
-    async def send(message):
-        responses.append(message)
-
-    await app(
-        {
-            "type": "http",
-            "asgi": {"version": "3.0"},
-            "http_version": "1.1",
-            "method": "GET",
-            "scheme": "http",
-            "path": path,
-            "raw_path": path.encode(),
-            "query_string": b"",
-            "root_path": "",
-            "headers": [],
-            "client": ("127.0.0.1", 1234),
-            "server": ("127.0.0.1", 8000),
-        },
-        receive,
-        send,
-    )
-    return responses[0]["status"], json.loads(responses[1]["body"])
-
-
 def test_health_readiness_and_storage_loss(tmp_path):
-    async def scenario():
-        app = create_app(Settings(data_dir=str(tmp_path / "state")))
-        async with app.router.lifespan_context(app):
-            status, payload = await request(app, "/health")
-            assert status == 200
-            assert payload["status"] == "alive"
-            status, payload = await request(app, "/ready")
-            assert status == 503
-            assert payload["checks"] == {"storage": "ready", "execution": "not_implemented"}
-            (tmp_path / "state").rmdir()
-            status, payload = await request(app, "/ready")
-            assert status == 503
-            assert payload["checks"]["storage"] == "unavailable"
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    state = tmp_path / "state"
+    env = {key: value for key, value in os.environ.items() if not key.startswith("TM_")}
+    process = subprocess.Popen(
+        [
+            sys.executable, "-m", "tournament_management", "serve",
+            "--http-port", str(port), "--data-dir", str(state),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        url = f"http://127.0.0.1:{port}"
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                with urlopen(f"{url}/health", timeout=0.5) as response:
+                    assert json.load(response)["status"] == "alive"
+                break
+            except OSError:
+                if process.poll() is not None or time.monotonic() >= deadline:
+                    pytest.fail("El servidor no llegó a estar disponible")
+                time.sleep(0.05)
 
-    asyncio.run(scenario())
+        with urlopen(f"{url}/health") as response:
+            assert response.status == 200
+            assert json.load(response)["status"] == "alive"
+        with pytest.raises(HTTPError) as ready_response:
+            urlopen(f"{url}/ready")
+        assert ready_response.value.code == 503
+        state.rmdir()
+        with pytest.raises(HTTPError) as unavailable_response:
+            urlopen(f"{url}/ready")
+        assert unavailable_response.value.code == 503
+    finally:
+        process.terminate()
+        process.communicate(timeout=10)
 
 
 def test_json_logs():

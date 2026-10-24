@@ -1,0 +1,14 @@
+{
+  "tournament_id": "demo-elimination",
+  "format": "elimination",
+  "competitors": [
+    {"id": "a", "bot": "optimal.py"},
+    {"id": "b", "bot": "random_bot.py"},
+    {"id": "c", "bot": "optimal.py"},
+    {"id": "d", "bot": "random_bot.py"},
+    {"id": "e", "bot": "optimal.py"}
+  ],
+  "initial_piles": [1, 2, 3],
+  "first_player": 0,
+  "seed": 42
+}

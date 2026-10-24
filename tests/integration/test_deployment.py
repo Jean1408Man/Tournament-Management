@@ -139,12 +139,23 @@ def fake_commands(tmp_path):
         "with open(os.environ['COMMAND_LOG'], 'a') as f:\n"
         "    f.write(json.dumps(sys.argv) + '\\n')\n"
         "if os.path.basename(sys.argv[0]) == 'docker' and 'inspect' in sys.argv:\n"
+        "    if os.environ.get('TEST_START') and sys.argv[1:3] == ['container', 'inspect']:\n"
+        "        calls = [json.loads(line) for line in open(os.environ['COMMAND_LOG'])]\n"
+        "        created = [c[c.index('--name')+1] for c in calls if '--name' in c]\n"
+        "        if sys.argv[-1] not in created:\n"
+        "            sys.exit(1)\n"
         "    if not os.environ.get('TEST_OWNED'):\n"
         "        print('foreign-project')\n"
-        "    elif any('.Config.Labels' in a for a in sys.argv):\n"
+        "    elif any('.Labels' in a for a in sys.argv):\n"
         "        print('tournament-management')\n"
+        "    elif '{{.Driver}}' in sys.argv:\n"
+        "        print('bridge')\n"
+        "    elif any('.Mounts' in a for a in sys.argv):\n"
+        "        print(os.environ.get('TEST_MOUNT_WRITABLE', 'false'))\n"
         "    elif '{{.State.Running}}' in sys.argv:\n"
         "        print('true')\n"
+        "    elif os.environ.get('TEST_DIFFERENT_IMAGES') and '{{.Image}}' in sys.argv:\n"
+        "        print('postgres-image' if 'tm-postgres' in sys.argv else 'app-image')\n"
         "    else:\n"
         "        print('same-image')\n"
         "if 'exec' in sys.argv and 'timeout' in sys.argv:\n"
@@ -228,7 +239,7 @@ def test_membership_timeout_is_reported_and_runs_inside_container(fake_commands)
 
 def test_status_uses_ray_configuration_for_doctor(fake_commands):
     env, calls = fake_commands
-    env["TEST_OWNED"] = "1"
+    env.update(TEST_OWNED="1", TEST_DIFFERENT_IMAGES="1")
     result = subprocess.run(
         ["bash", str(ROOT / "scripts/cluster-status.sh")],
         env=env,
@@ -239,6 +250,31 @@ def test_status_uses_ray_configuration_for_doctor(fake_commands):
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
     doctor = next(args for args in commands if "doctor" in args)
     assert doctor[-4:] == ["--backend", "ray", "--http-host", "0.0.0.0"]
+
+
+def test_dotenv_read_as_data_and_environment_wins(fake_commands, tmp_path):
+    env, _ = fake_commands
+    config = tmp_path / "settings.env"
+    marker = tmp_path / "executed"
+    config.write_text(
+        f"TM_API_PORT=8765\nTM_POSTGRES_PASSWORD=fromfile\nIGNORED=$(touch {marker})\n"
+    )
+    env.update(TM_ENV_FILE=str(config), TM_POSTGRES_PASSWORD="fromenvironment")
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; printf "%s %s" "$TM_API_PORT" "$TM_POSTGRES_PASSWORD"',
+            "test",
+            str(ROOT / "scripts/common.sh"),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "8765 fromenvironment"
+    assert not marker.exists()
 
 
 def test_stop_uses_timeout_and_preserves_volume(fake_commands):
@@ -253,6 +289,62 @@ def test_stop_uses_timeout_and_preserves_volume(fake_commands):
     assert result.returncode == 0, result.stderr
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
     stops = [args for args in commands if args[0] == "stop"]
-    assert len(stops) == 4
+    assert len(stops) == 5
     assert all(args[1:3] == ["--timeout", "20"] for args in stops)
     assert not any(args[0] in {"volume", "network"} for args in commands)
+
+
+def test_start_shares_artifacts_readonly_with_workers(fake_commands):
+    env, calls = fake_commands
+    env.update(TEST_OWNED="1", TEST_START="1", TM_POSTGRES_PASSWORD="testonly")
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/start-cluster.sh")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
+    runs = {args[args.index("--name") + 1]: args for args in commands if args[0] == "run"}
+    for worker in ("tm-worker-1", "tm-worker-2"):
+        assert "source=tm-artifacts,target=/var/lib/tm/artifacts,readonly" in runs[worker]
+        assert not any("source=tm-state" in arg for arg in runs[worker])
+        assert not any("TM_DATABASE_URL=" in arg for arg in runs[worker])
+    assert "source=tm-artifacts,target=/var/lib/tm/artifacts" in runs["tm-coordinator"]
+    assert not any("tm-artifacts" in arg for arg in runs["tm-head"])
+
+
+@pytest.mark.parametrize("writable", ["false", "true"])
+def test_artifact_probe_requires_readonly_mount(fake_commands, writable):
+    env, calls = fake_commands
+    env.update(TEST_OWNED="1", TEST_MOUNT_WRITABLE=writable)
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/probe-artifact.sh"), "a" * 64],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
+    checks = [args for args in commands if "verify-artifact" in args]
+    if writable == "false":
+        assert result.returncode == 0, result.stderr
+        assert len(checks) == 2
+        assert {args[1] for args in checks} == {"tm-worker-1", "tm-worker-2"}
+    else:
+        assert result.returncode != 0
+        assert not checks
+
+
+def test_coordinator_entrypoint_honors_execution_backend(fake_commands):
+    env, calls = fake_commands
+    env["TM_BACKEND"] = "local"
+    result = subprocess.run(
+        ["bash", str(ROOT / "deploy/entrypoint.sh"), "coordinator"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    command = json.loads(calls.read_text().splitlines()[0])
+    assert command[command.index("--backend") + 1] == "local"
