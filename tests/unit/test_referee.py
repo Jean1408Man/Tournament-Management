@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from tournament_management.domain.messages import AttemptSpec, MatchSpec, OutcomeKind
-from tournament_management.referee.runner import run_match
+from tournament_management.game.referee import run_match
+from tournament_management.shared.messages import AttemptSpec, MatchSpec, OutcomeKind
 
 ROOT = Path(__file__).resolve().parents[2]
 

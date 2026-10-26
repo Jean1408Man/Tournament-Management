@@ -26,7 +26,7 @@ tm = "tournament_management.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tournament_management"]
-include = ["src/tournament_management/adapters/*.sql"]
+include = ["src/tournament_management/database/migrations/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

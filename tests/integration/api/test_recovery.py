@@ -4,8 +4,8 @@ import threading
 
 import pytest
 
-from tournament_management.application.ports import ExecutionError
-from tournament_management.domain.messages import AttemptOutcome, OutcomeKind
+from tournament_management.execution.backend import ExecutionError
+from tournament_management.shared.messages import AttemptOutcome, OutcomeKind
 
 
 def outcome(attempt):

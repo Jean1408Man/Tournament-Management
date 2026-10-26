@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from tournament_management.domain.messages import (
+from tournament_management.shared.messages import (
     AttemptOutcome,
     AttemptSpec,
     DomainEvent,
@@ -14,7 +14,7 @@ from tournament_management.domain.messages import (
     WorkerInfo,
     WorkerStatus,
 )
-from tournament_management.domain.states import (
+from tournament_management.shared.states import (
     TRANSITIONS,
     AttemptState,
     MatchState,

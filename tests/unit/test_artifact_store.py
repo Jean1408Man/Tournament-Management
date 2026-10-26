@@ -9,10 +9,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from tournament_management.adapters.artifact_store import FileArtifactStore
-from tournament_management.adapters.registered_execution import run_registered_match
-from tournament_management.application.ports import ArtifactIntegrityError
-from tournament_management.domain.messages import AttemptSpec, MatchSpec, OutcomeKind
+from tournament_management.competitors.artifact_store import (
+    ArtifactIntegrityError,
+    FileArtifactStore,
+)
+from tournament_management.execution.backends.registered import run_registered_match
+from tournament_management.shared.messages import AttemptSpec, MatchSpec, OutcomeKind
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -137,12 +139,12 @@ def test_referee_runs_verified_bots_from_store(tmp_path):
 
 
 def test_corruption_prevents_starting_either_bot(tmp_path, monkeypatch):
-    from tournament_management.adapters import registered_execution
+    from tournament_management.execution.backends import registered
 
     store = FileArtifactStore(tmp_path)
     digest = store.put(b"# valid Python\n")
     run = Mock()
-    monkeypatch.setattr(registered_execution, "run_match", run)
+    monkeypatch.setattr(registered, "run_match", run)
     result = run_registered_match(attempt((digest, "f" * 64)), store)
     assert result.kind == OutcomeKind.INFRASTRUCTURE_FAILURE
     assert not result.winner_id
@@ -150,7 +152,7 @@ def test_corruption_prevents_starting_either_bot(tmp_path, monkeypatch):
 
 
 def test_execution_uses_verified_private_copies_and_cleans_them(tmp_path, monkeypatch):
-    from tournament_management.adapters import registered_execution
+    from tournament_management.execution.backends import registered
 
     store = FileArtifactStore(tmp_path)
     digest = store.put(b"# bot\n")
@@ -166,7 +168,7 @@ def test_execution_uses_verified_private_copies_and_cleans_them(tmp_path, monkey
             paths.append(path)
         return sentinel
 
-    monkeypatch.setattr(registered_execution, "run_match", run)
+    monkeypatch.setattr(registered, "run_match", run)
     assert run_registered_match(attempt((digest, digest)), store) is sentinel
     assert all(not path.exists() for path in paths)
 
@@ -181,7 +183,7 @@ def test_registered_execution_forwards_cancellation(tmp_path):
 
 
 def test_partial_write_error_does_not_leave_object(tmp_path, monkeypatch):
-    from tournament_management.adapters import artifact_store
+    from tournament_management.competitors import artifact_store
 
     store = FileArtifactStore(tmp_path)
     original = artifact_store.tempfile.NamedTemporaryFile

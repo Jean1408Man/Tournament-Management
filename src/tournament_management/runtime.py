@@ -1,24 +1,24 @@
-"""Composición de adaptadores; aplicación y API no importan infraestructura."""
+"""Composición: el único lugar que elige base de datos, almacén y backend de ejecución."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import fields
 from tempfile import TemporaryFile
 
-from tournament_management.adapters.artifact_store import FileArtifactStore
-from tournament_management.adapters.local_execution import LocalExecution
-from tournament_management.adapters.postgres_connection import check_schema
-from tournament_management.adapters.postgres_store import PostgresUnitOfWork
-from tournament_management.adapters.registered_execution import run_registered_match
-from tournament_management.application.competitor_service import CompetitorService
-from tournament_management.application.coordinator.engine import TournamentCoordinator
-from tournament_management.application.coordinator.policy import ExecutionPolicy
-from tournament_management.application.coordinator.queries import TournamentQueries
-from tournament_management.application.coordinator.services import ApiServices
-from tournament_management.application.persistent_tournament_service import (
+from tournament_management.api.services import ApiServices
+from tournament_management.competitors.artifact_store import FileArtifactStore
+from tournament_management.competitors.service import CompetitorService
+from tournament_management.config import Settings
+from tournament_management.database.connection import check_schema
+from tournament_management.database.unit_of_work import PostgresUnitOfWork
+from tournament_management.execution.backends.local import LocalExecution
+from tournament_management.execution.backends.registered import run_registered_match
+from tournament_management.execution.coordinator import TournamentCoordinator
+from tournament_management.execution.policy import ExecutionPolicy
+from tournament_management.tournaments.queries import TournamentQueries
+from tournament_management.tournaments.service import (
     PersistentTournamentService,
 )
-from tournament_management.config import Settings
 
 
 def check_storage(settings: Settings, *, create: bool = False) -> None:

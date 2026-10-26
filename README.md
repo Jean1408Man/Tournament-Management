@@ -179,29 +179,30 @@ La guía [deploy/STEP16-TESTS.md](deploy/STEP16-TESTS.md) contiene los comandos
 locales, reconstrucción de imagen, prueba positiva y fallo controlado.
 `.github/workflows/ci.yml` configura lint y pytest al publicar en GitHub.
 
-El paso 1.2 incorpora la estructura del código:
+El código está organizado por módulos de dominio (monolito modular). Cada
+carpeta reúne la lógica, el SQL y las rutas HTTP de una parte del problema:
 
-- `domain/`: reglas y formatos deportivos puros.
-- `application/`: casos de uso y puertos de ejecución/persistencia.
-- `referee/`: protocolo, procesos de bots y límites.
-- `adapters/`: implementaciones local, Ray, PostgreSQL y artefactos.
-- `api/routers/`: rutas separadas por recurso; `api/schemas/`: contratos HTTP.
-- `application/coordinator/`: cola, ejecución de intentos, política y consultas.
-- `observability/`: logs y métricas.
-- `app.py`: ciclo de vida HTTP; `runtime.py`: composición de adaptadores;
-  `config.py`: configuración;
-  `cli.py`: argumentos y despacho; `commands.py`: ejecución de comandos.
+- `shared/`: mensajes versionados, estados, errores, contrato de la unidad de
+  trabajo, logging y métricas.
+- `game/`: reglas de Nim, protocolo nim-jsonl, árbitro, procesos y límites.
+- `competitors/`: registro de bots, almacén inmutable por SHA-256, SQL y rutas.
+- `tournaments/`: formatos, definición y cuadro, servicio durable (crear,
+  emitir, aceptar, fallar, cancelar), consultas, SQL (`persistence/`) y rutas.
+- `execution/`: puerto `ExecutionBackend`, coordinador, plazos, recuperación,
+  cancelación física, backends (`backends/`) y ruta `/workers`.
+- `events/`: eventos durables, su repositorio y SSE reanudable.
+- `cluster/`: conexión, topología y diagnóstico del clúster (`ray_*.py` para Ray).
+- `simulation/`: simulación en memoria de la etapa 2 (`tm simulate`).
+- `database/`: conexión, migraciones SQL, idempotencia y unidad de trabajo.
+- `api/`: infraestructura HTTP común (errores, dependencias, salud, rutas).
+- Raíz: `app.py` (ciclo de vida HTTP), `runtime.py` (composición), `config.py`,
+  `cli.py` y `commands.py`.
 
-La persistencia PostgreSQL separa la conexión y migración (`postgres_connection.py`),
-la unidad de trabajo (`postgres_store.py`) y los repositorios de partidas,
-torneos y eventos (`postgres_matches.py`, `postgres_tournaments.py` y
-`postgres_events.py`). Todos los repositorios de una unidad de trabajo comparten
-la misma conexión y transacción.
-
-Los módulos de Etapa 2 implementan el negocio local; los de etapas futuras
-siguen como contratos o componentes pendientes. Solo los adaptadores Ray pueden importar Ray; aplicación y dominio no
-dependen de adaptadores. `tests/unit/test_architecture.py` comprueba estas
-reglas automáticamente, incluidas dependencias relativas.
+Todos los repositorios de una unidad de trabajo comparten la misma conexión y
+transacción. Solo `cluster/ray_*.py` puede importar Ray; `game/`, los formatos y
+`shared/` no dependen de infraestructura, y `tournaments/` nunca importa
+`execution/`. `tests/unit/test_architecture.py` comprueba estas reglas
+automáticamente, incluidas dependencias relativas.
 
 `bots/`, `deploy/`, `scripts/`, `examples/` y `experiments/` contienen README
 con sus siguientes pasos. Las pruebas de integración y punta a punta tienen
@@ -211,10 +212,10 @@ directorios reservados. La documentación detallada está en
 
 ## Contratos internos (paso 1.3)
 
-`domain/messages.py` define mensajes inmutables con JSON versionado para partidas,
-intentos, resultados, workers y eventos. `domain/states.py` valida transiciones
-de torneo, partida e intento. `application/ports.py` define los puertos de
-ejecución, repositorios y unidad de trabajo. El backend local ya está
+`shared/messages.py` define mensajes inmutables con JSON versionado para partidas,
+intentos, resultados, workers y eventos. `shared/states.py` valida transiciones
+de torneo, partida e intento. `execution/backend.py` define el puerto de
+ejecución y `shared/unit_of_work.py` la unidad de trabajo. El backend local ya está
 implementado; la aceptación transaccional en PostgreSQL se incorpora en 3.1
 y la API con ejecución local durable en 3.3.
 

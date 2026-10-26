@@ -4,8 +4,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from tournament_management.application.errors import ConflictError
-from tournament_management.application.ports import ArtifactIntegrityError
+from tournament_management.competitors.artifact_store import ArtifactIntegrityError
+from tournament_management.shared.errors import ConflictError
 
 
 class ApiError(Exception):

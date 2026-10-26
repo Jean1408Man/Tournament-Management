@@ -42,7 +42,7 @@ def test_sse_reconnect_excludes_confirmed_event_and_keeps_order(api):
 def test_sse_disconnect_and_reconnect_while_tournament_is_running(api_factory):
     import threading
 
-    from tournament_management.adapters.registered_execution import run_registered_match
+    from tournament_management.execution.backends.registered import run_registered_match
 
     release = threading.Event()
 
@@ -86,7 +86,7 @@ def test_replay_spans_multiple_database_pages(api):
     from datetime import UTC, datetime
     from uuid import uuid4
 
-    from tournament_management.domain.messages import DomainEvent
+    from tournament_management.shared.messages import DomainEvent
 
     api.register("a")
     api.register("b")

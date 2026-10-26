@@ -11,8 +11,8 @@ from urllib.parse import quote, urlencode
 import pytest
 from psycopg.conninfo import conninfo_to_dict
 
-from tournament_management.adapters.postgres_store import PostgresUnitOfWork
-from tournament_management.domain.messages import AttemptOutcome
+from tournament_management.database.unit_of_work import PostgresUnitOfWork
+from tournament_management.shared.messages import AttemptOutcome
 
 from .client import ApiClient
 

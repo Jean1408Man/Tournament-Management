@@ -9,14 +9,14 @@ from threading import Barrier
 import psycopg
 import pytest
 
-from tournament_management.adapters.postgres_connection import migrate
-from tournament_management.adapters.postgres_events import _PostgresEvents
-from tournament_management.adapters.postgres_store import PostgresUnitOfWork
-from tournament_management.application.persistent_tournament_service import (
+from tournament_management.database.connection import migrate
+from tournament_management.database.unit_of_work import PostgresUnitOfWork
+from tournament_management.events.repository import _PostgresEvents
+from tournament_management.shared.messages import AttemptOutcome, AttemptSpec, OutcomeKind
+from tournament_management.tournaments.model import TournamentSpec
+from tournament_management.tournaments.service import (
     PersistentTournamentService,
 )
-from tournament_management.domain.messages import AttemptOutcome, AttemptSpec, OutcomeKind
-from tournament_management.domain.persistent_tournament import TournamentSpec
 
 
 def factory(database):
@@ -280,7 +280,9 @@ def test_migration_is_idempotent_and_retains_data(database):
 
 
 def test_upgrade_from_initial_schema_preserves_existing_tournament(empty_database):
-    schema = files("tournament_management.adapters").joinpath("postgres_schema.sql").read_text()
+    schema = (
+        files("tournament_management.database").joinpath("migrations/0001_initial.sql").read_text()
+    )
     with psycopg.connect(empty_database) as connection:
         connection.execute(schema)
         connection.execute(
@@ -369,14 +371,16 @@ def test_replacing_queued_attempt_uses_allowed_terminal_state(database):
 def test_failed_migration_rolls_back_ddl_and_version(empty_database, monkeypatch):
     from types import SimpleNamespace
 
-    from tournament_management.adapters import postgres_connection
+    from tournament_management.database import connection as postgres_connection
 
-    initial = files("tournament_management.adapters").joinpath("postgres_schema.sql").read_text()
+    initial = (
+        files("tournament_management.database").joinpath("migrations/0001_initial.sql").read_text()
+    )
 
     def resource(filename):
         text = (
             initial
-            if filename == "postgres_schema.sql"
+            if filename == "migrations/0001_initial.sql"
             else ("CREATE TABLE partial_change (id INT); SELECT 1 / 0;")
         )
         return SimpleNamespace(read_text=lambda: text)

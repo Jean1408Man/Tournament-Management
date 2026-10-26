@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from tournament_management.domain.messages import AttemptOutcome, OutcomeKind
+from tournament_management.shared.messages import AttemptOutcome, OutcomeKind
 
 
 def result(attempt, kind=OutcomeKind.COMPLETED):

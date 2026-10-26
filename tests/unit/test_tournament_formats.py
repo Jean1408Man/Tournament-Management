@@ -2,10 +2,10 @@ from itertools import combinations
 
 import pytest
 
-from tournament_management.application.tournament_service import Competitor, run_tournament
-from tournament_management.domain.formats.elimination import Elimination
-from tournament_management.domain.formats.round_robin import RoundRobin
-from tournament_management.domain.messages import AttemptOutcome, OutcomeKind
+from tournament_management.shared.messages import AttemptOutcome, OutcomeKind
+from tournament_management.simulation.tournament_service import Competitor, run_tournament
+from tournament_management.tournaments.formats.elimination import Elimination
+from tournament_management.tournaments.formats.round_robin import RoundRobin
 
 
 @pytest.mark.parametrize("size", [2, 3, 5, 16])

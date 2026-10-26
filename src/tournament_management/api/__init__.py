@@ -1,1 +1,1 @@
-"""Interfaz HTTP que delega en servicios de aplicación."""
+"""Infraestructura HTTP común: errores, dependencias, salud y ensamblado de rutas."""

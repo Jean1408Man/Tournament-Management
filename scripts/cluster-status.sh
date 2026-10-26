@@ -18,7 +18,7 @@ done
 printf 'Comprobando membresía mediante Ray Client (máximo 30 s)...\n'
 # El plazo vive dentro del contenedor: no dejar Python huérfano al matar docker exec.
 if docker exec tm-coordinator timeout --kill-after=2 30 python -m \
-  tournament_management.adapters.ray_membership --address ray://tm-head:10001 --expected-workers 2; then
+  tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2; then
   :
 else
   status=$?

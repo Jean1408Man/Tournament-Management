@@ -17,7 +17,7 @@ import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 
-from tournament_management.adapters.postgres_connection import migrate
+from tournament_management.database.connection import migrate
 
 
 @pytest.fixture(scope="session")

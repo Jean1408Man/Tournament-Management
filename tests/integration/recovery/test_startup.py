@@ -4,9 +4,9 @@ from dataclasses import replace
 
 import pytest
 
-from tournament_management.adapters.postgres_events import _PostgresEvents
-from tournament_management.application.coordinator.recovery import StartupRecovery
-from tournament_management.domain.messages import OutcomeKind
+from tournament_management.events.repository import _PostgresEvents
+from tournament_management.execution.recovery import StartupRecovery
+from tournament_management.shared.messages import OutcomeKind
 
 
 def test_lost_attempt_is_closed_before_replacement_and_late_result_rejected(scenario_factory):

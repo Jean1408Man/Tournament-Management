@@ -13,7 +13,7 @@ from urllib.request import urlopen
 import pytest
 
 from tournament_management.config import Settings
-from tournament_management.observability.logging import JsonFormatter
+from tournament_management.shared.logging import JsonFormatter
 
 
 def test_precedence():

@@ -4,17 +4,17 @@ from dataclasses import replace
 
 import pytest
 
-from tournament_management.adapters.local_execution import LocalExecution
-from tournament_management.application.ports import ExecutionError
-from tournament_management.application.result_service import ResultService
-from tournament_management.application.scheduler import Scheduler
-from tournament_management.application.tournament_service import Competitor, run_tournament
-from tournament_management.domain.messages import (
+from tournament_management.execution.backend import ExecutionError
+from tournament_management.execution.backends.local import LocalExecution
+from tournament_management.shared.messages import (
     AttemptOutcome,
     AttemptSpec,
     MatchSpec,
     OutcomeKind,
 )
+from tournament_management.simulation.result_service import ResultService
+from tournament_management.simulation.scheduler import Scheduler
+from tournament_management.simulation.tournament_service import Competitor, run_tournament
 
 
 def attempt():

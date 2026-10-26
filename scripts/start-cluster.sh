@@ -67,7 +67,7 @@ for name in tm-worker-1 tm-worker-2; do
     "$image_id" ray-worker
 done
 wait_for "dos workers registrados" docker exec tm-head timeout --kill-after=2 12 python -m \
-  tournament_management.adapters.ray_membership --address ray://tm-head:10001 --expected-workers 2
+  tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2
 
 docker run "${base[@]}" --name tm-coordinator --hostname tm-coordinator \
   --cpus 1 --memory 1g --publish "127.0.0.1:${TM_API_PORT:-8000}:8000" \

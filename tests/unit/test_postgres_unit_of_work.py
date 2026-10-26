@@ -5,7 +5,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from tournament_management.adapters import postgres_connection, postgres_store
+from tournament_management.database import connection as postgres_connection
+from tournament_management.database import unit_of_work as postgres_store
 
 
 @pytest.fixture

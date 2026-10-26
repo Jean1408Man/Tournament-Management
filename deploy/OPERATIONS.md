@@ -49,7 +49,7 @@ el head no recibe partidas con reserva CPU positiva. Al implementar tasks
 deben pedir recursos CPU explícitamente; CPU=0 no impide tareas de coste cero.
 
 Con `TM_BACKEND=ray`, app.py abre la conexión mediante
-adapters/ray_membership.py al iniciar y la cierra al parar. Si esa conexión
+cluster/ray_connection.py al iniciar y la cierra al parar. Si esa conexión
 inicial falla, el arranque HTTP falla. Los scripts usan `TM_BACKEND=local`
 por defecto desde 3.3; la ejecución local no requiere conexión Ray. Los nodos
 Ray se conservan para las comprobaciones de infraestructura.
@@ -180,7 +180,7 @@ docker exec tm-head ray health-check --address=127.0.0.1:6379
 docker volume create --label org.tournament-management.project=tournament-management tm-artifacts
 docker run -d --pull never --init --name tm-worker-1 --hostname tm-worker-1 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --mount source=tm-artifacts,target=/var/lib/tm/artifacts,readonly tournament-management:step-1.5 ray-worker
 docker run -d --pull never --init --name tm-worker-2 --hostname tm-worker-2 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --mount source=tm-artifacts,target=/var/lib/tm/artifacts,readonly tournament-management:step-1.5 ray-worker
-docker exec tm-head python -m tournament_management.adapters.ray_membership --address ray://tm-head:10001 --expected-workers 2
+docker exec tm-head python -m tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2
 docker run -d --pull never --init --name tm-coordinator --hostname tm-coordinator --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 1g -p 127.0.0.1:8000:8000 --mount source=tm-state,target=/var/lib/tm --mount source=tm-artifacts,target=/var/lib/tm/artifacts tournament-management:step-1.5 coordinator
 ```
 

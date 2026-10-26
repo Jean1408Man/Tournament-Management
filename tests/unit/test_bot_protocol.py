@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tournament_management.referee.protocol import (
+from tournament_management.game.protocol import (
     MAX_MESSAGE_BYTES,
     encode,
     read_message,
