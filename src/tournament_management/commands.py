@@ -14,11 +14,11 @@ from tournament_management.config import Settings
 
 
 def simulate(settings: Settings, args: argparse.Namespace) -> None:
-    from tournament_management.adapters.local_execution import LocalExecution
-    from tournament_management.application.result_service import ResultService
-    from tournament_management.application.scheduler import Scheduler
-    from tournament_management.application.tournament_service import Competitor, run_tournament
-    from tournament_management.referee.runner import run_match
+    from tournament_management.execution.backends.local import LocalExecution
+    from tournament_management.game.referee import run_match
+    from tournament_management.simulation.result_service import ResultService
+    from tournament_management.simulation.scheduler import Scheduler
+    from tournament_management.simulation.tournament_service import Competitor, run_tournament
 
     try:
         with open(args.spec, encoding="utf-8") as stream:
@@ -96,8 +96,8 @@ def simulate(settings: Settings, args: argparse.Namespace) -> None:
 
 
 def match(settings: Settings, args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    from tournament_management.domain.messages import AttemptSpec, MatchSpec
-    from tournament_management.referee.runner import run_match
+    from tournament_management.game.referee import run_match
+    from tournament_management.shared.messages import AttemptSpec, MatchSpec
 
     try:
         with open(args.spec, encoding="utf-8") as stream:
@@ -159,8 +159,8 @@ def probe_cluster(
         parser.error("probe-cluster requiere --ray-address ray://host:10001 o TM_RAY_ADDRESS")
     if args.expected_workers < 1 or args.timeout_seconds < 1:
         parser.error("expected-workers y timeout-seconds deben ser positivos")
-    from tournament_management.adapters.ray_execution import probe_cluster as execute_probe
-    from tournament_management.application.ports import ExecutionError
+    from tournament_management.cluster.ray_probe import probe_cluster as execute_probe
+    from tournament_management.execution.backend import ExecutionError
 
     try:
         report = execute_probe(settings.ray_address, args.expected_workers, args.timeout_seconds)
@@ -173,7 +173,7 @@ def probe_cluster(
 def migrate(settings: Settings, parser: argparse.ArgumentParser) -> None:
     if not settings.database_url:
         parser.error("migrate requiere --database-url o TM_DATABASE_URL")
-    from tournament_management.adapters.postgres_store import migrate as apply_migrations
+    from tournament_management.database.unit_of_work import migrate as apply_migrations
 
     try:
         apply_migrations(settings.database_url)
@@ -187,7 +187,7 @@ def serve(settings: Settings, parser: argparse.ArgumentParser) -> None:
     if settings.role != "coordinator":
         parser.error("tm serve requiere el rol coordinator; los roles Ray arrancarán en 1.5")
     from tournament_management.app import create_app
-    from tournament_management.observability.logging import configure_logging
+    from tournament_management.shared.logging import configure_logging
 
     configure_logging(settings.log_level)
     import uvicorn
@@ -200,9 +200,9 @@ def serve(settings: Settings, parser: argparse.ArgumentParser) -> None:
 
 def registry(settings: Settings, args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Herramientas de 3.2; el registro HTTP de archivos se añadirá en 3.3."""
-    from tournament_management.adapters.artifact_store import FileArtifactStore
-    from tournament_management.adapters.postgres_store import PostgresUnitOfWork
-    from tournament_management.application.competitor_service import CompetitorService
+    from tournament_management.competitors.artifact_store import FileArtifactStore
+    from tournament_management.competitors.service import CompetitorService
+    from tournament_management.database.unit_of_work import PostgresUnitOfWork
 
     if args.command != "verify-artifact" and not settings.database_url:
         parser.error("Este comando requiere --database-url o TM_DATABASE_URL")

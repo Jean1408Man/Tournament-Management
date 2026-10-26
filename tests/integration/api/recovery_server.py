@@ -13,10 +13,10 @@ from pathlib import Path
 import uvicorn
 
 from tournament_management.app import create_app
-from tournament_management.application.persistent_tournament_service import (
+from tournament_management.config import Settings
+from tournament_management.tournaments.service import (
     PersistentTournamentService,
 )
-from tournament_management.config import Settings
 
 
 def main():

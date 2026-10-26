@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import Depends, Header, Request
 
 from tournament_management.api.errors import ApiError
-from tournament_management.application.coordinator.services import ApiServices
+from tournament_management.api.services import ApiServices
 
 IdempotencyKey = Annotated[
     str,

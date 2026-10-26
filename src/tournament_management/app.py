@@ -6,11 +6,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from tournament_management import __version__
-from tournament_management.adapters.postgres_connection import driver
 from tournament_management.api.errors import install_error_handlers, storage_error
-from tournament_management.api.routers.health import router as health_router
+from tournament_management.api.health import router as health_router
 from tournament_management.api.routes import router as api_router
 from tournament_management.config import Settings
+from tournament_management.database.connection import driver
 from tournament_management.runtime import application_services, readiness
 from tournament_management.runtime import check_storage as check_storage
 
@@ -24,13 +24,13 @@ def create_app(settings: Settings) -> FastAPI:
         connection = None
         try:
             if settings.backend == "ray":
-                from tournament_management.adapters.ray_membership import RayConnection
+                from tournament_management.cluster.ray_connection import RayConnection
 
                 connection = RayConnection(settings.ray_address)
                 connection.connect()
                 logger.info("Conexión Ray Client establecida")
             if settings.database_url:
-                from tournament_management.adapters.postgres_connection import check_schema
+                from tournament_management.database.connection import check_schema
 
                 check_schema(settings.database_url)
                 logger.info("Conexión PostgreSQL comprobada")

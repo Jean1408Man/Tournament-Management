@@ -8,8 +8,8 @@ from unittest.mock import Mock
 import pytest
 
 from tournament_management import __version__
-from tournament_management.adapters import ray_execution
-from tournament_management.application.ports import ExecutionError
+from tournament_management.cluster import ray_probe
+from tournament_management.execution.backend import ExecutionError
 
 NODES = [
     {"node_id": "head", "address": "h", "cpus": 0, "worker": False},
@@ -37,7 +37,7 @@ def result(node_id, nonce="test"):
 def probe_backend(monkeypatch):
     connection = Mock()
     connection.snapshot.return_value = NODES
-    monkeypatch.setattr(ray_execution, "RayConnection", Mock(return_value=connection))
+    monkeypatch.setattr(ray_probe, "RayConnection", Mock(return_value=connection))
     ray = ModuleType("ray")
     ray.__version__ = "2.40.0"
     ray.cancel = Mock()
@@ -72,7 +72,7 @@ def probe_backend(monkeypatch):
 
 def test_probe_targets_each_worker_with_hard_affinity(probe_backend):
     connection, ray, calls = probe_backend
-    report = ray_execution.probe_cluster("ray://head:10001")
+    report = ray_probe.probe_cluster("ray://head:10001")
     assert report["status"] == "ok"
     assert [row["node_id"] for row in report["workers"]] == ["worker-1", "worker-2"]
     assert calls == [
@@ -88,7 +88,7 @@ def test_missing_worker_fails_before_sending_tasks(probe_backend):
     connection, ray, _ = probe_backend
     connection.snapshot.return_value = NODES[:2]
     with pytest.raises(ExecutionError, match="workers"):
-        ray_execution.probe_cluster("ray://head:10001")
+        ray_probe.probe_cluster("ray://head:10001")
     ray.remote.assert_not_called()
     connection.close.assert_called_once()
 
@@ -97,7 +97,7 @@ def test_timeout_cancels_pending_tasks_and_disconnects(probe_backend):
     connection, ray, _ = probe_backend
     ray.get.side_effect = TimeoutError("worker perdido")
     with pytest.raises(ExecutionError, match="TimeoutError"):
-        ray_execution.probe_cluster("ray://head:10001", timeout_seconds=1)
+        ray_probe.probe_cluster("ray://head:10001", timeout_seconds=1)
     assert ray.cancel.call_count == 2
     connection.close.assert_called_once()
 
@@ -117,7 +117,7 @@ def test_partial_submission_is_cleaned_up(probe_backend):
 
     task.options.side_effect = options
     with pytest.raises(ExecutionError):
-        ray_execution.probe_cluster("ray://head:10001")
+        ray_probe.probe_cluster("ray://head:10001")
     ray.cancel.assert_called_once()
     connection.close.assert_called_once()
 
@@ -134,12 +134,12 @@ def test_partial_submission_is_cleaned_up(probe_backend):
 ])
 def test_invalid_evidence_is_rejected(rows):
     with pytest.raises(ExecutionError):
-        ray_execution.validate_probe_results(rows, {"worker-1", "worker-2"}, "test", VERSIONS)
+        ray_probe.validate_probe_results(rows, {"worker-1", "worker-2"}, "test", VERSIONS)
 
 
 @pytest.mark.parametrize("workers,timeout", [(0, 30), (2, 0), (-1, 30)])
 def test_invalid_limits(probe_backend, workers, timeout):
     connection, _, _ = probe_backend
     with pytest.raises(ValueError):
-        ray_execution.probe_cluster("ray://head:10001", workers, timeout)
+        ray_probe.probe_cluster("ray://head:10001", workers, timeout)
     connection.connect.assert_not_called()

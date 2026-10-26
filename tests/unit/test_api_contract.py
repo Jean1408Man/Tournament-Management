@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from tournament_management.api.errors import ApiError
-from tournament_management.api.events import parse_cursor
 from tournament_management.app import create_app
 from tournament_management.config import Settings
+from tournament_management.events.sse import parse_cursor
 
 ROOT = Path(__file__).resolve().parents[2]
 

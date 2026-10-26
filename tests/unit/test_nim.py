@@ -1,6 +1,6 @@
 import pytest
 
-from tournament_management.domain.nim import (
+from tournament_management.game.nim import (
     Move,
     Position,
     apply_move,

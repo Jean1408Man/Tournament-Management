@@ -6,12 +6,12 @@ from uuid import uuid4
 
 import pytest
 
-from tournament_management.adapters.postgres_store import PostgresUnitOfWork
-from tournament_management.application.persistent_tournament_service import (
+from tournament_management.database.unit_of_work import PostgresUnitOfWork
+from tournament_management.shared.messages import AttemptOutcome, AttemptSpec, OutcomeKind
+from tournament_management.tournaments.model import TournamentSpec
+from tournament_management.tournaments.service import (
     PersistentTournamentService,
 )
-from tournament_management.domain.messages import AttemptOutcome, AttemptSpec, OutcomeKind
-from tournament_management.domain.persistent_tournament import TournamentSpec
 
 
 @dataclass

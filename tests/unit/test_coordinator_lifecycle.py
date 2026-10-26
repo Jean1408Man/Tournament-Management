@@ -2,9 +2,9 @@
 
 import pytest
 
-from tournament_management.adapters.local_execution import LocalExecution
-from tournament_management.application.coordinator.recovery import StartupRecovery
 from tournament_management.config import Settings
+from tournament_management.execution.backends.local import LocalExecution
+from tournament_management.execution.recovery import StartupRecovery
 from tournament_management.runtime import application_services
 
 

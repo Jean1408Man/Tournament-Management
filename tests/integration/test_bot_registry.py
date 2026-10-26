@@ -13,10 +13,12 @@ from unittest.mock import Mock
 import pytest
 from psycopg.conninfo import conninfo_to_dict
 
-from tournament_management.adapters.artifact_store import FileArtifactStore
-from tournament_management.adapters.postgres_store import PostgresUnitOfWork
-from tournament_management.application.competitor_service import CompetitorService
-from tournament_management.application.ports import ArtifactIntegrityError
+from tournament_management.competitors.artifact_store import (
+    ArtifactIntegrityError,
+    FileArtifactStore,
+)
+from tournament_management.competitors.service import CompetitorService
+from tournament_management.database.unit_of_work import PostgresUnitOfWork
 
 SOURCE = b"# Bot nuevo subido sin reiniciar\nprint('hello')\n"
 
@@ -235,7 +237,7 @@ def test_cli_register_and_inspect_after_new_process(database, tmp_path):
 
 
 def test_different_uploads_cannot_race_to_replace_one_competitor(database, tmp_path, monkeypatch):
-    from tournament_management.adapters.postgres_registry import _PostgresRegistry
+    from tournament_management.competitors.repository import _PostgresRegistry
 
     # Forzar que ambas transacciones lean ausencia antes de intentar insertar
     # la misma identidad, con hashes distintos y por tanto sin bloqueo compartido

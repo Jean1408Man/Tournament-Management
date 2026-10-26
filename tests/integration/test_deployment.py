@@ -11,10 +11,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from tournament_management.adapters.ray_membership import RayConnection, validate_topology
 from tournament_management.app import create_app
-from tournament_management.application.ports import ExecutionError
+from tournament_management.cluster.ray_connection import RayConnection
+from tournament_management.cluster.ray_topology import validate_topology
 from tournament_management.config import Settings
+from tournament_management.execution.backend import ExecutionError
 
 ROOT = Path(__file__).resolve().parents[2]
 
