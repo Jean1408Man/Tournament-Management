@@ -23,6 +23,7 @@ class Settings:
     artifact_max_bytes: int = 1048576
     max_retries: int = 3
     retry_delay_ms: int = 1000
+    cancel_grace_ms: int = 5000
 
     def __post_init__(self) -> None:
         if self.role not in {"coordinator", "ray-head", "ray-worker"}:
@@ -45,6 +46,7 @@ class Settings:
             "memory_limit_bytes",
             "output_limit_bytes",
             "artifact_max_bytes",
+            "cancel_grace_ms",
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"TM_{name.upper()} debe ser positivo")

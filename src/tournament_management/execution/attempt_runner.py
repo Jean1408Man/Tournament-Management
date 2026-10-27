@@ -63,13 +63,13 @@ class AttemptRunner:
                 return
             self.stopping.wait(0.02)
 
-    @staticmethod
-    def _failure(attempt: AttemptSpec, reason: str) -> AttemptOutcome:
+    def _failure(self, attempt: AttemptSpec, reason: str) -> AttemptOutcome:
         return AttemptOutcome(
             match_id=attempt.match.match_id,
             attempt_id=attempt.attempt_id,
             generation=attempt.generation,
-            worker_id="local",
+            # Un envío rechazado no llegó a tener worker.
+            worker_id=self.backend.worker_of(attempt.attempt_id) or "unassigned",
             kind=OutcomeKind.INFRASTRUCTURE_FAILURE,
             winner_id="",
             reason=reason,

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tournament_management.game.process_io import BotFault, BotPipes
 from tournament_management.game.referee import run_match
 from tournament_management.shared.messages import AttemptSpec, MatchSpec, OutcomeKind
 
@@ -75,6 +76,29 @@ def test_both_bots_fail_without_inventing_winner():
     )
     assert result.kind is OutcomeKind.NO_WINNER
     assert result.winner_id == ""
+
+
+class _HelloFails(BotPipes):
+    """El jugador 0 ya cerró stdin al enviar el saludo: fija el orden de la carrera."""
+
+    def send(self, player, message, deadline, cancel):
+        if player == 0 and message["type"] == "hello":
+            raise BotFault(0, "El bot cerró stdin")
+        super().send(player, message, deadline, cancel)
+
+
+@pytest.mark.parametrize(
+    "rival,kind,winner",
+    [
+        ("bots/faulty/invalid_output.py", OutcomeKind.NO_WINNER, ""),
+        ("bots/optimal.py", OutcomeKind.BOT_FAILURE, "random"),
+    ],
+)
+def test_bot_dead_before_hello_is_a_handshake_fault(monkeypatch, rival, kind, winner):
+    monkeypatch.setattr("tournament_management.game.referee.BotPipes", _HelloFails)
+    result = run_match(attempt(), (command("bots/faulty/premature_exit.py"), command(rival)))
+    assert result.kind is kind
+    assert result.winner_id == winner
 
 
 def test_cancel_interrupts_silent_bot_and_reaps_processes():

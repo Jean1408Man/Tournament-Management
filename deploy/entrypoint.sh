@@ -19,7 +19,9 @@ case "$role" in
       --disable-usage-stats --block "$@"
     ;;
   ray-worker)
+    # El nombre de nodo es la identidad pública del worker (hostname del contenedor).
     exec ray start --address="${TM_RAY_HEAD_ADDRESS:-tm-head:6379}" \
+      --node-name="$(hostname)" \
       --num-cpus="${TM_WORKER_CPUS:-1}" --num-gpus=0 --resources='{"tm_worker": 1}' \
       --object-store-memory="${TM_OBJECT_STORE_BYTES:-268435456}" \
       --disable-usage-stats --block "$@"

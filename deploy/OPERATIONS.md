@@ -130,9 +130,10 @@ y [opciones HTTP de uv](https://docs.astral.sh/uv/configuration/environment/).
 Resultado esperado: PostgreSQL disponible, tres nodos Ray vivos (head sin CPU y
 dos workers con CPU), cuatro contenedores de aplicación con la misma imagen,
 resolución DNS interna y API saludable.
-`/ready` devuelve 200 con backend local, esquema migrado y almacenamiento
-disponible. Con backend Ray devuelve 503: la ejecución de torneos en Ray
-todavía no está implementada. `/health` solo comprueba vida del proceso.
+`/ready` devuelve 200 con esquema migrado, almacenamiento disponible y
+coordinador sano, con cualquiera de los dos backends. Con Ray, la falta de
+workers no cambia `/ready`; se ve en `/api/v1/workers`. `/health` solo
+comprueba vida del proceso.
 
 El arranque espera hasta TM_START_TIMEOUT segundos (180 por defecto) por etapa.
 Si falla muestra logs y conserva contenedores para diagnóstico; no borra el
@@ -224,10 +225,12 @@ bash scripts/cluster-status.sh
 curl -i http://127.0.0.1:8000/ready
 ```
 
-`TM_BACKEND` se lee de `.env` o del entorno; usa `local` para probar la API.
-Con `ray` siguen disponibles las consultas y el registro, pero crear torneos
-responde 503. `/api/v1/workers` informa las identidades que ofrece el backend
-de ejecución: no presenta nodos de membresía Ray como ejecutores de partidas.
+`TM_BACKEND` se lee de `.env` o del entorno. Con `local` las partidas se juegan
+en el coordinador. Desde 4.1, con `ray` se juegan en los workers: el
+coordinador elige el worker, Ray no reintenta y `/api/v1/workers` muestra cada
+worker por su hostname (`tm-worker-1`), sin identificadores internos de Ray.
+Los workers arrancan con `--node-name` igual a su hostname; hay que recrear
+los contenedores con la imagen nueva para que lo tengan.
 
 El [recorrido HTTP](../examples/api/README.md) permite registrar bots, ejecutar
 ambos formatos, consultar intentos y reanudar eventos. El cierre del servidor

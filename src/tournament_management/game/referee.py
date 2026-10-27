@@ -46,13 +46,20 @@ def run_match(
             if cancel is not None and cancel.is_set():
                 raise InterruptedError("cancelled")
             pipes.start(command, player)
-        for player in (0, 1):
-            pipes.send(
-                player, {"type": "hello", "protocol": "nim-jsonl", "version": 1},
-                match_deadline, cancel,
-            )
         faults: list[BotFault] = []
         for player in (0, 1):
+            try:
+                pipes.send(
+                    player, {"type": "hello", "protocol": "nim-jsonl", "version": 1},
+                    match_deadline, cancel,
+                )
+            except BotFault as exc:
+                # Un bot que muere antes del saludo falla el handshake igual
+                # que uno que responde mal; si el rival también falla, no hay ganador.
+                faults.append(exc)
+        for player in (0, 1):
+            if any(fault.player == player for fault in faults):
+                continue
             try:
                 ready = pipes.read(
                     player, min(match_deadline, time.monotonic() + limits.turn_timeout_ms / 1000),
