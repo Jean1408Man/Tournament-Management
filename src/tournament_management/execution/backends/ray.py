@@ -13,7 +13,6 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from itertools import count
-from pathlib import Path
 
 from tournament_management.execution.backend import ExecutionError
 from tournament_management.shared.messages import (
@@ -27,13 +26,34 @@ from tournament_management.shared.messages import (
 logger = logging.getLogger(__name__)
 
 
-def play_attempt(attempt_json: str, worker_id: str, artifact_dir: str, max_bytes: int) -> str:
-    """Se ejecuta en el worker; recibe su identidad pública del adaptador."""
-    from tournament_management.competitors.artifact_store import FileArtifactStore
+def play_attempt(attempt_json: str, worker_id: str) -> str:
+    """Se ejecuta en el worker; recibe su identidad pública del adaptador.
+
+    La dirección del coordinador y el token salen del entorno del worker (D2.4),
+    nunca de la tarea: el secreto no viaja por Ray.
+    """
+    import os
+
+    from tournament_management.competitors.remote_store import RemoteArtifactStore
+    from tournament_management.config import Settings
     from tournament_management.execution.backends.registered import run_registered_match
 
     attempt = AttemptSpec.from_json(attempt_json)
-    store = FileArtifactStore(Path(artifact_dir), max_bytes=max_bytes)
+    try:
+        settings = Settings.load({}, os.environ)
+        store = RemoteArtifactStore(
+            settings.artifact_url, settings.internal_token,
+            max_bytes=settings.artifact_max_bytes,
+            timeout_ms=settings.artifact_download_timeout_ms,
+        )
+    except ValueError:
+        # Worker sin TM_ARTIFACT_URL/TM_INTERNAL_TOKEN válidos: infraestructura.
+        return AttemptOutcome(
+            match_id=attempt.match.match_id, attempt_id=attempt.attempt_id,
+            generation=attempt.generation, worker_id=worker_id,
+            kind=OutcomeKind.INFRASTRUCTURE_FAILURE, winner_id="",
+            reason="artifact_download_not_configured",
+        ).to_json()
     return run_registered_match(attempt, store, worker_id=worker_id).to_json()
 
 
@@ -52,16 +72,12 @@ class RayExecution:
         self,
         nodes: Callable[[], list[dict]],
         *,
-        artifact_dir: str,
-        artifact_max_bytes: int,
         cancel_grace_ms: int,
     ) -> None:
         import ray
 
         self._ray = ray
         self._nodes = nodes
-        self._artifact_dir = artifact_dir
-        self._artifact_max_bytes = artifact_max_bytes
         self._cancel_grace = cancel_grace_ms / 1000
         # Sin reintentos de Ray: ocultarían intentos que la plataforma debe ver.
         self._task = ray.remote(max_retries=0, retry_exceptions=False)(play_attempt)
@@ -91,9 +107,7 @@ class RayExecution:
                     scheduling_strategy=NodeAffinitySchedulingStrategy(
                         node_id=node["node_id"], soft=False
                     ),
-                ).remote(
-                    attempt.to_json(), node["name"], self._artifact_dir, self._artifact_max_bytes
-                )
+                ).remote(attempt.to_json(), node["name"])
             except Exception as exc:
                 raise ExecutionError(f"Ray rechazó el envío ({type(exc).__name__})") from exc
             self._entries[attempt.attempt_id] = _Entry(

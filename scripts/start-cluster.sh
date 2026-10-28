@@ -8,6 +8,13 @@ require_docker
 command -v timeout >/dev/null || die "Se requiere timeout (GNU coreutils)."
 [[ "$TM_ARTIFACT_MAX_BYTES" =~ ^[1-9][0-9]*$ ]] || die "TM_ARTIFACT_MAX_BYTES debe ser positivo."
 [[ "$TM_START_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "TM_START_TIMEOUT debe ser positivo."
+# Token de la descarga interna de bots (4.2): nuevo en cada arranque salvo que
+# ya esté exportado. No se guarda en .env; coordinador y workers lo comparten.
+if [[ -z "${TM_INTERNAL_TOKEN:-}" ]]; then
+  TM_INTERNAL_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+fi
+[[ "$TM_INTERNAL_TOKEN" =~ ^[A-Za-z0-9]{16,}$ ]] ||
+  die "TM_INTERNAL_TOKEN debe tener al menos 16 letras o números."
 image_id="$(docker image inspect --format '{{.Id}}' "$TM_IMAGE")" ||
   die "Imagen local ausente. Ejecuta bash scripts/build-image.sh."
 for name in "${TM_CONTAINERS[@]}"; do
@@ -33,8 +40,8 @@ else
   docker volume create --label "$TM_LABEL_KEY=$TM_LABEL_VALUE" tm-postgres-data
 fi
 
-# Un volumen dedicado permite compartir solo ejecutables, sin exponer el resto
-# del estado del coordinador. Los workers reciben exclusivamente lectura.
+# Volumen de ejecutables del coordinador. Desde 4.2 los workers no lo montan:
+# descargan cada bot por hash desde el coordinador y verifican sus bytes.
 if docker volume inspect tm-artifacts >/dev/null 2>&1; then
   owned volume tm-artifacts
 else
@@ -63,10 +70,14 @@ wait_for "control de Ray" docker exec tm-head timeout --kill-after=2 12 \
 
 for name in tm-worker-1 tm-worker-2; do
   docker run "${base[@]}" "${ray_limits[@]}" --name "$name" --hostname "$name" \
-    --mount source=tm-artifacts,target=/var/lib/tm/artifacts,readonly \
+    --env TM_ARTIFACT_URL=http://tm-coordinator:8000 \
+    --env "TM_INTERNAL_TOKEN=$TM_INTERNAL_TOKEN" \
     "$image_id" ray-worker
 done
-wait_for "dos workers registrados" docker exec tm-head timeout --kill-after=2 12 python -m \
+# Cada conexión Ray Client arranca un proceso propio en el head; con el equipo
+# cargado tarda varios segundos, así que el intento tiene plazo propio de 30 s.
+TM_TRY_TIMEOUT=35 wait_for "dos workers registrados" docker exec tm-head \
+  timeout --kill-after=2 30 python -m \
   tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2
 
 docker run "${base[@]}" --name tm-coordinator --hostname tm-coordinator \
@@ -76,6 +87,7 @@ docker run "${base[@]}" --name tm-coordinator --hostname tm-coordinator \
   --env TM_RAY_ADDRESS=ray://tm-head:10001 \
   --env "TM_DATABASE_URL=postgresql://tm:${TM_POSTGRES_PASSWORD}@tm-postgres:5432/tournament_management" \
   --env "TM_BACKEND=${TM_BACKEND:-local}" --env TM_HTTP_HOST=0.0.0.0 \
+  --env "TM_INTERNAL_TOKEN=$TM_INTERNAL_TOKEN" \
   "$image_id" coordinator
 wait_for "API del coordinador" docker exec tm-coordinator python -c \
   'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).read()'

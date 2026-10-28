@@ -20,15 +20,17 @@ class ArtifactIntegrityError(OSError):
     """Objeto ausente, ilegible o cuyo contenido no coincide con su hash."""
 
 
-class ArtifactStore(Protocol):
-    """Archivo local hoy; descarga remota por hash en la etapa 4.2."""
-
-    def put(self, content: bytes) -> str:
-        """Publica bytes completos sin sobrescribir y retorna su SHA-256."""
-        ...
+class ArtifactReader(Protocol):
+    """Archivo local en el coordinador; descarga por hash en los workers (4.2)."""
 
     def get(self, artifact_hash: str) -> bytes:
         """Lee y verifica integridad en cada acceso, también en los workers."""
+        ...
+
+
+class ArtifactStore(ArtifactReader, Protocol):
+    def put(self, content: bytes) -> str:
+        """Publica bytes completos sin sobrescribir y retorna su SHA-256."""
         ...
 
 

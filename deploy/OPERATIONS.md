@@ -28,8 +28,9 @@ Son límites, no reservas físicas. Presupuesto orientativo: 4 CPU y al menos
 8 GiB para Docker, con margen adicional para el sistema operativo. Cada nodo
 Ray usa 256 MiB de object store. Los valores están en start-cluster.sh.
 El coordinador conserva su estado local en tm-state y PostgreSQL sus datos en
-tm-postgres-data. Desde 3.2, los ejecutables se guardan en tm-artifacts: el
-coordinador tiene escritura y los workers solo lectura, sin credenciales SQL.
+tm-postgres-data. Los ejecutables se guardan en tm-artifacts, que solo monta el
+coordinador. Desde 4.2 los workers no tienen ese volumen ni credenciales SQL:
+descargan cada bot por hash desde el coordinador (ver "Artefactos internos").
 Los tres volúmenes se preservan al detener el clúster. El
 arranque requiere que la imagen `postgres:16.6-bookworm` esté disponible y crea
 la base `tournament_management`; el coordinador aplica el esquema idempotente.
@@ -179,10 +180,11 @@ docker volume create --label org.tournament-management.project=tournament-manage
 docker run -d --pull never --init --name tm-head --hostname tm-head --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m tournament-management:step-1.5 ray-head
 docker exec tm-head ray health-check --address=127.0.0.1:6379
 docker volume create --label org.tournament-management.project=tournament-management tm-artifacts
-docker run -d --pull never --init --name tm-worker-1 --hostname tm-worker-1 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --mount source=tm-artifacts,target=/var/lib/tm/artifacts,readonly tournament-management:step-1.5 ray-worker
-docker run -d --pull never --init --name tm-worker-2 --hostname tm-worker-2 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --mount source=tm-artifacts,target=/var/lib/tm/artifacts,readonly tournament-management:step-1.5 ray-worker
+TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+docker run -d --pull never --init --name tm-worker-1 --hostname tm-worker-1 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --env TM_ARTIFACT_URL=http://tm-coordinator:8000 --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 ray-worker
+docker run -d --pull never --init --name tm-worker-2 --hostname tm-worker-2 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --env TM_ARTIFACT_URL=http://tm-coordinator:8000 --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 ray-worker
 docker exec tm-head python -m tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2
-docker run -d --pull never --init --name tm-coordinator --hostname tm-coordinator --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 1g -p 127.0.0.1:8000:8000 --mount source=tm-state,target=/var/lib/tm --mount source=tm-artifacts,target=/var/lib/tm/artifacts tournament-management:step-1.5 coordinator
+docker run -d --pull never --init --name tm-coordinator --hostname tm-coordinator --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 1g -p 127.0.0.1:8000:8000 --mount source=tm-state,target=/var/lib/tm --mount source=tm-artifacts,target=/var/lib/tm/artifacts --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 coordinator
 ```
 
 Esperar a que las comprobaciones intermedias tengan éxito antes de continuar.
@@ -193,25 +195,44 @@ no usar como servicio público para bots no confiables.
 
 ## Artefactos internos (etapa 3.2)
 
-Reconstruir la imagen y recrear contenedores incorpora el nuevo montaje. No basta
-con reiniciar contenedores creados antes de 3.2. El volumen tm-artifacts se monta
-en `/var/lib/tm/artifacts`; está fuera de los puertos publicados y los workers
-lo reciben con `readonly`. El head no lo monta. El almacenamiento compartido
-presupone el despliegue actual en un único host Docker.
+El volumen tm-artifacts se monta en `/var/lib/tm/artifacts` del coordinador.
+Hasta 4.1 los workers lo recibían con `readonly`; desde 4.2 no lo montan ni el
+head ni los workers. Reconstruir la imagen y recrear los contenedores con
+`start-cluster.sh` aplica el cambio; reiniciar contenedores antiguos no basta.
 
 `tm register-bot` publica y sincroniza un archivo completo antes del commit SQL.
-`tm inspect-bot` consulta el registro y verifica hash/tamaño al leerlo. Los workers
-pueden usar `tm verify-artifact --artifact-hash HASH` sin URL PostgreSQL.
-`bash scripts/probe-artifact.sh HASH` aplica esa verificación en ambos workers y
-comprueba sus montajes. Una lectura de objeto alterado o ausente falla: no se
-repara automáticamente ni se acepta otro código bajo el mismo hash.
+`tm inspect-bot` consulta el registro y verifica hash/tamaño al leerlo.
+
+### Descarga desde los workers (etapa 4.2)
+
+- El coordinador sirve `GET /internal/artifacts/{hash}` en su puerto 8000. Es
+  una ruta interna: no forma parte del contrato `/api/v1` ni del OpenAPI.
+- Exige la cabecera `Authorization: Bearer <TM_INTERNAL_TOKEN>`; sin token
+  válido responde 401. Si el coordinador no tiene token configurado, la ruta
+  responde 404. Un archivo que no supera la verificación en el coordinador
+  responde 503 y no se sirve.
+- `start-cluster.sh` genera un token aleatorio en cada arranque (salvo que
+  `TM_INTERNAL_TOKEN` esté exportado) y lo pasa al coordinador y a los
+  workers. Los workers reciben además `TM_ARTIFACT_URL=http://tm-coordinator:8000`.
+  El token no se guarda en `.env`, pero es visible con `docker inspect`, igual
+  que la contraseña de PostgreSQL: es un control de laboratorio.
+- Cada intento descarga sus dos bots, comprueba tamaño y SHA-256 y los copia a
+  una carpeta temporal propia que se borra al terminar. No hay caché. Una
+  descarga fallida, cortada o corrupta es un fallo de infraestructura y nunca
+  una derrota del bot.
+- `tm verify-artifact --artifact-hash HASH` descarga y verifica cuando
+  `TM_ARTIFACT_URL` está configurada (en los workers); si no, lee el volumen
+  local. `bash scripts/probe-artifact.sh HASH` comprueba en ambos workers que
+  **no** montan `tm-artifacts` y que la descarga verifica.
+- Una lectura de un objeto alterado o ausente falla: no se repara
+  automáticamente ni se acepta otro código bajo el mismo hash.
 
 Conservar y respaldar tm-artifacts junto con tm-postgres-data: conservar solo la
 base no conserva los bytes. Los archivos `.upload-*` que pueda dejar un corte
 abrupto no se anuncian ni se ejecutan. Un fallo SQL posterior a la publicación
 puede dejar objetos completos sin referencia; no hay recolección automática.
-El acceso por hash y los montajes de solo lectura no aíslan código hostil ni
-restringen a un administrador del daemon Docker.
+El acceso por hash y el token interno no aíslan código hostil ni restringen a
+un administrador del daemon Docker.
 
 ## API y ejecución local (etapa 3.3)
 

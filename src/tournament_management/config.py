@@ -24,6 +24,9 @@ class Settings:
     max_retries: int = 3
     retry_delay_ms: int = 1000
     cancel_grace_ms: int = 5000
+    artifact_url: str = ""
+    internal_token: str = ""
+    artifact_download_timeout_ms: int = 10000
 
     def __post_init__(self) -> None:
         if self.role not in {"coordinator", "ray-head", "ray-worker"}:
@@ -37,6 +40,8 @@ class Settings:
                 raise ValueError(f"TM_{name.upper()} no puede estar vacío")
         if self.database_url and not self.database_url.startswith(("postgresql://", "postgres://")):
             raise ValueError("TM_DATABASE_URL debe usar PostgreSQL")
+        if self.artifact_url and not self.artifact_url.startswith(("http://", "https://")):
+            raise ValueError("TM_ARTIFACT_URL debe ser http(s)://host:puerto del coordinador")
         if not 1 <= self.http_port <= 65535:
             raise ValueError("TM_HTTP_PORT debe estar entre 1 y 65535")
         for name in (
@@ -47,6 +52,7 @@ class Settings:
             "output_limit_bytes",
             "artifact_max_bytes",
             "cancel_grace_ms",
+            "artifact_download_timeout_ms",
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"TM_{name.upper()} debe ser positivo")

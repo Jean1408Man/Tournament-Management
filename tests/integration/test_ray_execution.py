@@ -1,33 +1,71 @@
 """Backend Ray contra un Ray real local: un head sin CPU y dos workers (D1.5).
 
 Usa Ray Client como el coordinador desplegado. Los nodos son procesos locales:
-quitar uno simula que un worker muere. Los casos raros viven en
+quitar uno simula que un worker muere. Los workers descargan los bots de la ruta
+interna real del coordinador (4.2). Los casos raros viven en
 tests/unit/test_ray_backend.py con un Ray falso.
 """
 
+import hashlib
 import os
 import socket
+import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import uvicorn
+from fastapi import FastAPI
 
+from tournament_management.api.errors import install_error_handlers
 from tournament_management.cluster.ray_connection import RayConnection
+from tournament_management.competitors.api import internal_router
 from tournament_management.competitors.artifact_store import FileArtifactStore
 from tournament_management.shared.messages import AttemptSpec, MatchSpec, OutcomeKind
 
 ROOT = Path(__file__).resolve().parents[2]
+TOKEN = "token-ray-local"
 NAMES = ("tm-worker-1", "tm-worker-2")
 STORE_BYTES = 80 * 1024 * 1024
 
 
 @pytest.fixture(scope="module")
-def cluster():
+def store(tmp_path_factory):
+    return FileArtifactStore(tmp_path_factory.mktemp("artifacts"))
+
+
+@pytest.fixture(scope="module")
+def coordinator_url(store):
+    """Solo la ruta interna de descarga del coordinador, sobre un almacén temporal."""
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(internal_router)
+    app.state.services = SimpleNamespace(artifacts=store, internal_token=TOKEN)
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    server = uvicorn.Server(uvicorn.Config(app, log_level="error", ws="none"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    while not server.started:
+        assert thread.is_alive(), "No arrancó el servidor de artefactos"
+        time.sleep(0.02)
+    yield f"http://127.0.0.1:{sock.getsockname()[1]}"
+    server.should_exit = True
+    thread.join(timeout=10)
+    sock.close()
+
+
+@pytest.fixture(scope="module")
+def cluster(coordinator_url):
     with pytest.MonkeyPatch.context() as patch:
         # Misma mitigación que el despliegue (decisión 1.15): sin ella el servidor
         # Ray Client por conexión puede abortar al arrancar dentro de pytest.
         patch.setenv("GRPC_POLL_STRATEGY", "poll")
         patch.setenv("GRPC_ENABLE_FORK_SUPPORT", "true")
+        # Los workers heredan del proceso que arranca sus nodos, como en Docker (D2.4).
+        patch.setenv("TM_ARTIFACT_URL", coordinator_url)
+        patch.setenv("TM_INTERNAL_TOKEN", TOKEN)
         yield from _cluster()
 
 
@@ -59,25 +97,17 @@ def _cluster():
     cluster.shutdown()
 
 
-@pytest.fixture(scope="module")
-def store(tmp_path_factory):
-    return FileArtifactStore(tmp_path_factory.mktemp("artifacts"))
-
-
 @pytest.fixture
-def backend(cluster, store):
+def backend(cluster):
     from tournament_management.execution.backends.ray import RayExecution
 
-    instance = RayExecution(
-        cluster[2].snapshot, artifact_dir=str(store.directory),
-        artifact_max_bytes=store.max_bytes, cancel_grace_ms=2000,
-    )
+    instance = RayExecution(cluster[2].snapshot, cancel_grace_ms=2000)
     yield instance
     instance.close()
 
 
-def attempt(store, number, bots, *, turn_timeout_ms=2000):
-    hashes = tuple(store.put((ROOT / bot).read_bytes()) for bot in bots)
+def attempt(store, number, bots, *, turn_timeout_ms=2000, hashes=None):
+    hashes = hashes or tuple(store.put((ROOT / bot).read_bytes()) for bot in bots)
     return AttemptSpec(
         attempt_id=f"ray-{number}-{time.monotonic_ns()}", generation=1,
         match=MatchSpec(
@@ -126,6 +156,16 @@ def test_matches_run_on_both_workers_with_public_names(backend, store):
         seen.add(outcome.worker_id)
     assert seen == set(NAMES)
     assert sorted(w.worker_id for w in backend.workers()) == list(NAMES)
+
+
+def test_bot_missing_on_coordinator_is_infrastructure_not_defeat(backend, store):
+    unknown = hashlib.sha256(b"bot que nunca se registro").hexdigest()
+    spec = attempt(store, 5, (), hashes=(unknown, unknown))
+    backend.submit(spec)
+    outcome = wait_outcome(backend, spec, 60)
+    assert outcome.kind is OutcomeKind.INFRASTRUCTURE_FAILURE
+    assert outcome.winner_id == ""
+    assert outcome.reason == "artifact_or_runtime_unavailable"
 
 
 def test_soft_cancel_stops_attempt_and_reaps_bots(backend, store):

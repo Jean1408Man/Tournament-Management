@@ -59,12 +59,8 @@ def _backend(settings: Settings, store: FileArtifactStore, connection):
         )
     from tournament_management.execution.backends.ray import RayExecution
 
-    return RayExecution(
-        connection.snapshot,
-        artifact_dir=str(store.directory),
-        artifact_max_bytes=settings.artifact_max_bytes,
-        cancel_grace_ms=settings.cancel_grace_ms,
-    )
+    # Los workers descargan los bots del coordinador (4.2): no reciben el almacén.
+    return RayExecution(connection.snapshot, cancel_grace_ms=settings.cancel_grace_ms)
 
 
 @contextmanager
@@ -86,6 +82,8 @@ def _services(settings: Settings, connection) -> Iterator[ApiServices | None]:
         queries=TournamentQueries(work_factory),
         work_factory=work_factory,
         max_upload_bytes=settings.artifact_max_bytes,
+        artifacts=store,
+        internal_token=settings.internal_token,
     )
     try:
         services.backend = _backend(settings, store, connection)

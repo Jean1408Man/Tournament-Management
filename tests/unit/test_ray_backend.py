@@ -101,10 +101,7 @@ def backend(ray):
     from tournament_management.execution.backends.ray import RayExecution
 
     nodes = list(NODES)
-    instance = RayExecution(
-        lambda: nodes, artifact_dir="/var/lib/tm/artifacts",
-        artifact_max_bytes=1024, cancel_grace_ms=20,
-    )
+    instance = RayExecution(lambda: nodes, cancel_grace_ms=20)
     instance.nodes = nodes
     yield instance
     instance.close()
@@ -137,7 +134,8 @@ def test_submit_pins_worker_without_ray_retries_and_sends_json(ray, backend):
     assert options["num_cpus"] == 1 and options["resources"] == {"tm_worker": 1}
     assert options["scheduling_strategy"] == NodeAffinitySchedulingStrategy("n1", soft=False)
     assert AttemptSpec.from_json(args[0]) == spec
-    assert args[1:] == ("tm-worker-1", "/var/lib/tm/artifacts", 1024)
+    # Ni almacén ni token viajan en la tarea: el worker los toma de su entorno.
+    assert args[1:] == ("tm-worker-1",)
     assert backend.worker_of(spec.attempt_id) == "tm-worker-1"
 
 
@@ -234,13 +232,31 @@ def test_workers_use_public_names_and_count_running(ray, backend):
     assert [w.worker_id for w in backend.workers()] == ["tm-worker-2"]
 
 
+@pytest.mark.parametrize(
+    "environment",
+    [{}, {"TM_ARTIFACT_URL": "http://tm-coordinator:8000"}, {"TM_ARTIFACT_URL": "ftp://x"}],
+)
+def test_worker_without_download_settings_reports_infrastructure(monkeypatch, environment):
+    from tournament_management.execution.backends.ray import play_attempt
+
+    for name in ("TM_ARTIFACT_URL", "TM_INTERNAL_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    spec = attempt()
+    result = AttemptOutcome.from_json(play_attempt(spec.to_json(), "tm-worker-1"))
+    result.validate_for(spec)
+    assert result.kind is OutcomeKind.INFRASTRUCTURE_FAILURE
+    assert result.reason == "artifact_download_not_configured"
+
+
 def test_membership_error_is_translated(ray):
     from tournament_management.execution.backends.ray import RayExecution
 
     def broken():
         raise RuntimeError("gcs unavailable")
 
-    instance = RayExecution(broken, artifact_dir="/a", artifact_max_bytes=1, cancel_grace_ms=1)
+    instance = RayExecution(broken, cancel_grace_ms=1)
     with pytest.raises(ExecutionError):
         instance.workers()
     with pytest.raises(ExecutionError):

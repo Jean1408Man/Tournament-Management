@@ -1,6 +1,6 @@
 """Entrada de ejecución que fija los bots por hash y verifica antes de lanzarlos.
 
-Los workers leen el volumen interno sin credenciales PostgreSQL. Cada intento
+Los workers descargan del coordinador sin credenciales PostgreSQL. Cada intento
 recibe copias privadas de los bytes verificados, no la ruta de una subida ni un
 comando elegido por el cliente. Esto no constituye aislamiento de código hostil.
 """
@@ -10,14 +10,14 @@ import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from tournament_management.competitors.artifact_store import ArtifactStore
+from tournament_management.competitors.artifact_store import ArtifactReader
 from tournament_management.game.referee import run_match
 from tournament_management.shared.messages import AttemptOutcome, AttemptSpec, OutcomeKind
 
 
 def run_registered_match(
     attempt: AttemptSpec,
-    store: ArtifactStore,
+    store: ArtifactReader,
     *,
     worker_id: str = "local",
     cancel: threading.Event | None = None,

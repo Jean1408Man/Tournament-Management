@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import NAMESPACE_URL, uuid5
 
+from tournament_management.competitors.artifact_store import ArtifactReader
 from tournament_management.competitors.service import CompetitorService
 from tournament_management.execution.backend import ExecutionBackend
 from tournament_management.execution.coordinator import TournamentCoordinator
@@ -24,6 +25,9 @@ class ApiServices:
     max_upload_bytes: int
     backend: ExecutionBackend | None = None
     coordinator: TournamentCoordinator | None = None
+    # Descarga interna de bots para los workers (4.2); token vacío = desactivada.
+    artifacts: ArtifactReader | None = None
+    internal_token: str = ""
 
     def create_tournament(
         self,

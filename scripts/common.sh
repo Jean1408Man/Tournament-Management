@@ -62,7 +62,7 @@ wait_for() {
   local description="$1"; shift
   local deadline=$((SECONDS + TM_START_TIMEOUT))
   while ((SECONDS < deadline)); do
-    if timeout --kill-after=2 15 "$@" >/dev/null 2>&1; then
+    if timeout --kill-after=2 "${TM_TRY_TIMEOUT:-15}" "$@" >/dev/null 2>&1; then
       printf 'Disponible: %s\n' "$description"
       return 0
     fi
