@@ -29,7 +29,23 @@ TM_POSTGRES_PASSWORD="${TM_POSTGRES_PASSWORD:-}"
 TM_START_TIMEOUT="${TM_START_TIMEOUT:-180}"
 TM_ARTIFACT_MAX_BYTES="${TM_ARTIFACT_MAX_BYTES:-1048576}"
 
+TM_RUN_BASE=(--detach --pull never --init --network tm-net --label "$TM_LABEL_KEY=$TM_LABEL_VALUE"
+             --stop-timeout 20 --log-opt max-size=10m --log-opt max-file=3
+             --env GRPC_POLL_STRATEGY=poll --env GRPC_ENABLE_FORK_SUPPORT=true
+             --env "TM_ARTIFACT_MAX_BYTES=$TM_ARTIFACT_MAX_BYTES")
+TM_RAY_LIMITS=(--cpus 1 --memory 2g --shm-size 512m --ulimit nofile=65536:65536)
+
 die() { printf '%s\n' "$*" >&2; exit 1; }
+
+# Worker Ray sin volumen ni credenciales PostgreSQL: descarga los bots del
+# coordinador con el token (4.2). Lo usan start-cluster.sh y add-worker.sh.
+start_worker() {
+  local name="$1" image="$2" token="$3"
+  docker run "${TM_RUN_BASE[@]}" "${TM_RAY_LIMITS[@]}" --name "$name" --hostname "$name" \
+    --env TM_ARTIFACT_URL=http://tm-coordinator:8000 \
+    --env "TM_INTERNAL_TOKEN=$token" \
+    "$image" ray-worker
+}
 
 require_docker() {
   command -v docker >/dev/null || die "Docker no está instalado."

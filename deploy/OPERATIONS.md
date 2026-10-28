@@ -306,3 +306,28 @@ no implementa elección de líder ni exclusión entre coordinadores.
 Las pruebas automatizadas de 3.4 usan PostgreSQL y HTTP reales con SIGKILL de
 procesos propios. No se ejecutaron estas operaciones Docker durante la entrega.
 El mecanismo de distribución de artefactos entre máquinas permanece en 4.2.
+
+## Membresía, capacidad y plazos (etapa 4.3)
+
+- `/api/v1/workers` muestra cada worker por su nombre con estado propio:
+  - `available`: puede recibir intentos;
+  - `suspected`: un intento suyo murió por Ray mientras Ray aún lo daba por
+    vivo (tras `docker kill`, Ray tarda unos 30 s en confirmarlo). No recibe
+    intentos durante `TM_SUSPECT_COOLDOWN_MS` (45 s) o hasta que reaparece
+    reiniciado;
+  - `lost`: se vio antes y Ray ya no lo da por vivo; capacidad 0.
+- Sin workers `available` con hueco, el coordinador espera sin crear intentos
+  ni gastar reintentos. Si pasan `TM_CAPACITY_WAIT_MS` (300 s), el torneo queda
+  `blocked` con el evento `tournament.blocked` y detalle `no_worker_capacity`.
+- Plazo del intento: `TM_ATTEMPT_TIMEOUT_MS` ≥ `TM_MATCH_TIMEOUT_MS` + 2 ×
+  `TM_ARTIFACT_DOWNLOAD_TIMEOUT_MS` + 10 s (por defecto 90 ≥ 60 + 20 + 10).
+  Si no se cumple, el arranque y `tm doctor` avisan, pero no se impide arrancar.
+  Medido en Docker: un intento normal tarda de 0,2 a 2,3 s.
+- Añadir un worker al clúster en marcha (misma imagen y token que el coordinador):
+
+```bash
+bash scripts/add-worker.sh tm-worker-3
+```
+
+  `stop-cluster.sh` retira también los workers añadidos: con un token viejo se
+  reconectarían al head del siguiente arranque.

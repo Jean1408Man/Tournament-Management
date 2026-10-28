@@ -125,6 +125,19 @@ class PersistentTournamentService:
             work.commit()
         self._publish(event)
 
+    def block(self, tournament_id: str, reason: str) -> bool:
+        """Bloquea un torneo en curso con motivo; estado, partidas y evento juntos."""
+        with self.work_factory() as work:
+            row = work.tournaments.lock(tournament_id)
+            if row["state"] != TournamentState.RUNNING.value:
+                return False
+            work.tournaments.set_state(tournament_id, TournamentState.BLOCKED)
+            work.matches.block_pending(tournament_id)
+            event = append_event(work, tournament_id, "tournament.blocked", detail=reason)
+            work.commit()
+        self._publish(event)
+        return True
+
     def finish_failure(self, outcome: AttemptOutcome, *, retry: bool) -> bool:
         """Persistir diagnóstico antes del acuse; bloquear si no queda reintento."""
         with self.work_factory() as work:

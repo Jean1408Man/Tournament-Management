@@ -4,6 +4,9 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+# Margen del plazo del intento sobre partida + descargas (D3.4).
+ATTEMPT_MARGIN_MS = 10_000
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -24,6 +27,8 @@ class Settings:
     max_retries: int = 3
     retry_delay_ms: int = 1000
     cancel_grace_ms: int = 5000
+    suspect_cooldown_ms: int = 45000
+    capacity_wait_ms: int = 300000
     artifact_url: str = ""
     internal_token: str = ""
     artifact_download_timeout_ms: int = 10000
@@ -52,6 +57,8 @@ class Settings:
             "output_limit_bytes",
             "artifact_max_bytes",
             "cancel_grace_ms",
+            "suspect_cooldown_ms",
+            "capacity_wait_ms",
             "artifact_download_timeout_ms",
         ):
             if getattr(self, name) <= 0:
@@ -60,6 +67,21 @@ class Settings:
             raise ValueError("Reintentos y espera no pueden ser negativos")
         if not self.turn_timeout_ms <= self.match_timeout_ms < self.attempt_timeout_ms:
             raise ValueError("Se requiere turno <= partida < plazo del intento")
+
+    def timing_warnings(self) -> list[str]:
+        """Avisos (no errores) de plazos incoherentes; D3.4 decide no impedir el arranque.
+
+        Un intento legítimo puede tardar lo que su partida más dos descargas de
+        bots; el margen cubre el arranque de la tarea (medido: 0,2–2,3 s en Docker).
+        """
+        needed = self.match_timeout_ms + 2 * self.artifact_download_timeout_ms + ATTEMPT_MARGIN_MS
+        if self.attempt_timeout_ms >= needed:
+            return []
+        return [
+            f"TM_ATTEMPT_TIMEOUT_MS={self.attempt_timeout_ms} es menor que partida + "
+            f"2 x descarga + margen = {needed} ms: un intento legítimo largo podría "
+            "cortarse como fallo de infraestructura"
+        ]
 
     @classmethod
     def load(cls, arguments: Mapping[str, object], environ: Mapping[str, str]) -> "Settings":

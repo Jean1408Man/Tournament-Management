@@ -35,6 +35,8 @@ def check_storage(settings: Settings, *, create: bool = False) -> None:
 
 @contextmanager
 def application_services(settings: Settings) -> Iterator[ApiServices | None]:
+    for message in settings.timing_warnings():
+        logger.warning(message)
     connection = None
     try:
         if settings.backend == "ray":
@@ -60,7 +62,11 @@ def _backend(settings: Settings, store: FileArtifactStore, connection):
     from tournament_management.execution.backends.ray import RayExecution
 
     # Los workers descargan los bots del coordinador (4.2): no reciben el almacén.
-    return RayExecution(connection.snapshot, cancel_grace_ms=settings.cancel_grace_ms)
+    return RayExecution(
+        connection.snapshot,
+        cancel_grace_ms=settings.cancel_grace_ms,
+        suspect_cooldown_ms=settings.suspect_cooldown_ms,
+    )
 
 
 @contextmanager

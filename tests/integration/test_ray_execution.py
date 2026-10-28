@@ -199,7 +199,15 @@ def test_worker_death_is_infrastructure_failure_on_that_worker(cluster, backend,
     assert outcome.kind is OutcomeKind.INFRASTRUCTURE_FAILURE
     assert outcome.worker_id == worker
     assert outcome.reason.startswith("ray:")
+    backend.acknowledge(spec.attempt_id)
+    # Esté Ray al día o no, el worker ya no es elegible: el reintento va al otro.
+    retry = attempt(store, 6, ("bots/optimal.py", "bots/random_bot.py"))
+    backend.submit(retry)
+    assert backend.worker_of(retry.attempt_id) != worker
+    assert wait_outcome(backend, retry, 60).kind is OutcomeKind.COMPLETED
     deadline = time.monotonic() + 60
-    while worker in {w.worker_id for w in backend.workers()}:
-        assert time.monotonic() < deadline, "Ray sigue anunciando el worker muerto"
+    statuses = {}
+    while statuses.get(worker) != "lost":
+        assert time.monotonic() < deadline, "El worker muerto no llegó a lost"
+        statuses = {w.worker_id: w.status.value for w in backend.workers()}
         time.sleep(0.5)

@@ -142,6 +142,7 @@ def doctor(settings: Settings) -> None:
         },
         "scope": "configuration_and_storage",
         "cluster_checked": False,
+        "warnings": settings.timing_warnings(),
     }
     try:
         check_storage(settings, create=True)

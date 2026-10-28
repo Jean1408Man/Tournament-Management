@@ -16,6 +16,7 @@ from tournament_management.shared.messages import (
     AttemptSpec,
     MatchSpec,
     OutcomeKind,
+    WorkerStatus,
 )
 
 
@@ -96,12 +97,27 @@ def ray(monkeypatch):
     return fake
 
 
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
 @pytest.fixture
-def backend(ray):
+def clock():
+    return Clock()
+
+
+@pytest.fixture
+def backend(ray, clock):
     from tournament_management.execution.backends.ray import RayExecution
 
     nodes = list(NODES)
-    instance = RayExecution(lambda: nodes, cancel_grace_ms=20)
+    instance = RayExecution(
+        lambda: nodes, cancel_grace_ms=20, suspect_cooldown_ms=45_000, clock=clock
+    )
     instance.nodes = nodes
     yield instance
     instance.close()
@@ -184,8 +200,8 @@ def test_notification_repeats_until_acknowledged(ray, backend):
     "value,reason",
     [
         (WorkerCrashedError("worker died"), "ray:WorkerCrashedError"),
-        ("not-json", "ray:JSONDecodeError"),
-        (outcome(attempt(2)).to_json(), "ray:ValueError"),
+        ("not-json", "invalid_outcome:JSONDecodeError"),
+        (outcome(attempt(2)).to_json(), "invalid_outcome:ValueError"),
     ],
 )
 def test_failures_become_infrastructure_on_the_assigned_worker(ray, backend, value, reason):
@@ -229,7 +245,60 @@ def test_workers_use_public_names_and_count_running(ray, backend):
         ("tm-worker-1", 1, 1), ("tm-worker-2", 1, 0),
     ]
     backend.nodes.pop()
-    assert [w.worker_id for w in backend.workers()] == ["tm-worker-2"]
+    # El worker desaparecido sigue listado como perdido y sin capacidad.
+    assert [(w.worker_id, w.status, w.capacity) for w in backend.workers()] == [
+        ("tm-worker-1", WorkerStatus.LOST, 0), ("tm-worker-2", WorkerStatus.AVAILABLE, 1),
+    ]
+
+
+def status_of(backend, name):
+    return {w.worker_id: w.status for w in backend.workers()}[name]
+
+
+def test_worker_death_makes_worker_suspected_and_next_attempt_goes_elsewhere(ray, backend):
+    backend.submit(attempt(1))
+    ray.finish(0, WorkerCrashedError("node died"))
+    backend.poll()
+    backend.acknowledge("a1")
+    # Ray aún lo lista vivo, pero no recibe trabajo mientras sea sospechoso.
+    assert status_of(backend, "tm-worker-1") is WorkerStatus.SUSPECTED
+    backend.submit(attempt(2))
+    assert ray.calls[1][2][1] == "tm-worker-2"
+    with pytest.raises(ExecutionError, match="capacidad"):
+        backend.submit(attempt(3))
+
+
+def test_suspicion_ends_after_cooldown(ray, backend, clock):
+    backend.submit(attempt(1))
+    ray.finish(0, WorkerCrashedError("node died"))
+    backend.poll()
+    backend.acknowledge("a1")
+    clock.now += 45.1
+    assert status_of(backend, "tm-worker-1") is WorkerStatus.AVAILABLE
+
+
+def test_restarted_worker_is_available_again(ray, backend):
+    backend.submit(attempt(1))
+    ray.finish(0, WorkerCrashedError("node died"))
+    backend.poll()
+    backend.acknowledge("a1")
+    backend.nodes[2] = {**backend.nodes[2], "node_id": "n1-restarted"}
+    assert status_of(backend, "tm-worker-1") is WorkerStatus.AVAILABLE
+
+
+def test_our_own_cancellation_does_not_make_worker_suspected(ray, backend):
+    backend.submit(attempt(1))
+    backend.cancel("a1")
+    ray.finish(0, WorkerCrashedError("cancelled"))
+    backend.poll()
+    assert status_of(backend, "tm-worker-1") is WorkerStatus.AVAILABLE
+
+
+def test_unreadable_result_does_not_make_worker_suspected(ray, backend):
+    backend.submit(attempt(1))
+    ray.finish(0, "not-json")
+    backend.poll()
+    assert status_of(backend, "tm-worker-1") is WorkerStatus.AVAILABLE
 
 
 @pytest.mark.parametrize(

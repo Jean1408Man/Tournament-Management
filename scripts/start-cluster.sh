@@ -49,11 +49,8 @@ else
 fi
 
 trap 'status=$?; printf "Arranque falló (código %s), línea %s: %s\n" "$status" "$LINENO" "$BASH_COMMAND" >&2; diagnostics; exit "$status"' ERR
-base=(--detach --pull never --init --network tm-net --label "$TM_LABEL_KEY=$TM_LABEL_VALUE"
-      --stop-timeout 20 --log-opt max-size=10m --log-opt max-file=3
-      --env GRPC_POLL_STRATEGY=poll --env GRPC_ENABLE_FORK_SUPPORT=true
-      --env "TM_ARTIFACT_MAX_BYTES=$TM_ARTIFACT_MAX_BYTES")
-ray_limits=(--cpus 1 --memory 2g --shm-size 512m --ulimit nofile=65536:65536)
+base=("${TM_RUN_BASE[@]}")
+ray_limits=("${TM_RAY_LIMITS[@]}")
 
 docker image inspect "$TM_POSTGRES_IMAGE" >/dev/null 2>&1 ||
   die "Imagen PostgreSQL ausente ($TM_POSTGRES_IMAGE). Descárgala explícitamente antes de arrancar."
@@ -69,10 +66,7 @@ wait_for "control de Ray" docker exec tm-head timeout --kill-after=2 12 \
   ray health-check --address=127.0.0.1:6379
 
 for name in tm-worker-1 tm-worker-2; do
-  docker run "${base[@]}" "${ray_limits[@]}" --name "$name" --hostname "$name" \
-    --env TM_ARTIFACT_URL=http://tm-coordinator:8000 \
-    --env "TM_INTERNAL_TOKEN=$TM_INTERNAL_TOKEN" \
-    "$image_id" ray-worker
+  start_worker "$name" "$image_id" "$TM_INTERNAL_TOKEN"
 done
 # Cada conexión Ray Client arranca un proceso propio en el head; con el equipo
 # cargado tarda varios segundos, así que el intento tiene plazo propio de 30 s.

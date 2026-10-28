@@ -140,6 +140,12 @@ def fake_commands(tmp_path):
         "with open(os.environ['COMMAND_LOG'], 'a') as f:\n"
         "    f.write(json.dumps(sys.argv) + '\\n')\n"
         "if os.path.basename(sys.argv[0]) == 'docker' and 'inspect' in sys.argv:\n"
+        "    if sys.argv[-1] in os.environ.get('TEST_MISSING', '').split(','):\n"
+        "        sys.exit(1)\n"
+        "    if any('.Config.Env' in a for a in sys.argv):\n"
+        "        print('PATH=/usr/bin')\n"
+        "        print('TM_INTERNAL_TOKEN=' + os.environ.get('TEST_TOKEN', ''))\n"
+        "        sys.exit(0)\n"
         "    if os.environ.get('TEST_START') and sys.argv[1:3] == ['container', 'inspect']:\n"
         "        calls = [json.loads(line) for line in open(os.environ['COMMAND_LOG'])]\n"
         "        created = [c[c.index('--name')+1] for c in calls if '--name' in c]\n"
@@ -338,6 +344,45 @@ def test_start_generates_a_new_token_unless_exported(fake_commands, tmp_path):
     (tmp_path / "calls").unlink()
     fixed = start_runs(fake_commands, TM_INTERNAL_TOKEN="a" * 32)["tm-worker-1"]
     assert env_value(fixed, "TM_INTERNAL_TOKEN") == "a" * 32
+
+
+def add_worker(fake_commands, name, **extra):
+    env, calls = fake_commands
+    env.update(TEST_OWNED="1", TEST_MISSING="tm-worker-3", **extra)
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/add-worker.sh"), name],
+        env=env, capture_output=True, text=True, timeout=20,
+    )
+    commands = (
+        [json.loads(line)[1:] for line in calls.read_text().splitlines()] if calls.exists() else []
+    )
+    return result, [args for args in commands if args[0] == "run"]
+
+
+def test_add_worker_reuses_image_and_token_without_volume(fake_commands):
+    result, runs = add_worker(fake_commands, "tm-worker-3", TEST_TOKEN="b" * 32)
+    assert result.returncode == 0, result.stderr
+    (run,) = runs
+    assert run[run.index("--name") + 1] == "tm-worker-3"
+    assert run[-2:] == ["same-image", "ray-worker"]
+    assert env_value(run, "TM_ARTIFACT_URL") == "http://tm-coordinator:8000"
+    assert env_value(run, "TM_INTERNAL_TOKEN") == "b" * 32
+    assert env_value(run, "TM_DATABASE_URL") is None
+    assert not any("tm-artifacts" in arg for arg in run)
+
+
+@pytest.mark.parametrize(
+    "name,extra",
+    [
+        ("tm-head", {"TEST_TOKEN": "b" * 32}),          # nombre no válido
+        ("tm-worker-1", {"TEST_TOKEN": "b" * 32}),      # ya existe
+        ("tm-worker-3", {"TEST_TOKEN": ""}),            # coordinador sin token
+    ],
+)
+def test_add_worker_refuses_without_running(fake_commands, name, extra):
+    result, runs = add_worker(fake_commands, name, **extra)
+    assert result.returncode != 0
+    assert runs == []
 
 
 @pytest.mark.parametrize("mounted", ["", "yes"])
