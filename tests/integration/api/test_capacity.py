@@ -76,3 +76,14 @@ def test_cancel_while_waiting_emits_no_attempts(api_factory, capacity):
     time.sleep(0.5)
     assert attempts(api, tournament_id) == 0
     assert api.request("GET", "/ready")[0] == 200
+
+
+def test_workers_endpoint_is_503_when_membership_is_unavailable(api, monkeypatch):
+    from tournament_management.execution.backend import ExecutionError
+
+    def broken(self):
+        raise ExecutionError("head caído")
+
+    monkeypatch.setattr(LocalExecution, "workers", broken)
+    status, _, body = api.request("GET", "/api/v1/workers")
+    assert (status, body["error"]["code"]) == (503, "execution_unavailable")

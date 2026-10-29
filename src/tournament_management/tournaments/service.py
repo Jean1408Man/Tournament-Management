@@ -73,9 +73,34 @@ class PersistentTournamentService:
             work.commit()
         self._publish(event)
 
+    def dispatched(self, attempt: AttemptSpec, worker_id: str) -> None:
+        """Evidencia de inicio (4.4, D4.1): en qué worker se envió el intento."""
+        with self.work_factory() as work:
+            event = append_event(
+                work, attempt.match.tournament_id, "attempt.dispatched",
+                attempt.match.match_id, attempt.attempt_id, detail=f"worker={worker_id}",
+            )
+            work.commit()
+        self._publish(event)
+
     def accept(self, outcome: AttemptOutcome) -> bool:
         with self.work_factory() as work:
             if not work.matches.try_accept(outcome):
+                # Un rechazo deja rastro (4.4, D4.1): duplicados y resultados
+                # viejos son evidencia de que el fencing por generación actuó.
+                reason = work.matches.rejection_reason(outcome)
+                try:
+                    tournament_id = work.matches.get(outcome.match_id).tournament_id
+                except KeyError:
+                    return False
+                append_event(
+                    work, tournament_id, "result.discarded", outcome.match_id,
+                    outcome.attempt_id,
+                    detail=f"worker={outcome.worker_id} kind={outcome.kind} reason={reason}",
+                )
+                work.commit()
+                # Sin señal rápida: el descarte no cambia el torneo y el historial
+                # durable (SSE) ya lo contiene; un fallo del publicador no lo oculta.
                 return False
             match = work.matches.get(outcome.match_id)
             work.tournaments.advance(match, outcome)

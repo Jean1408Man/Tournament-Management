@@ -35,6 +35,7 @@ class AttemptRunner:
         except ExecutionError:
             self.results.finish_failure(self._failure(attempt, "submission_failed"), retry=retry)
             return
+        self.results.dispatched(attempt, self.backend.worker_of(attempt.attempt_id) or "unassigned")
         deadline = time.monotonic() + self.policy.attempt_timeout_ms / 1000
         while not self.stopping.is_set():
             if cancelled():

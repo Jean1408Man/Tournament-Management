@@ -31,11 +31,13 @@ class WorkerMembership:
         self._cooldown = cooldown_ms / 1000
         self._clock = clock
         self._workers: dict[str, _Worker] = {}
+        # Orden en que apareció cada identidad interna: la más reciente es el reinicio.
+        self._first_seen: dict[str, int] = {}
 
     def observe(self, alive: Iterable[tuple[str, str, int]]) -> None:
         """Instantánea de workers vivos como (nombre, identidad interna, huecos)."""
         seen = set()
-        for name, node_id, slots in alive:
+        for name, node_id, slots in self._newest_per_name(alive):
             seen.add(name)
             worker = self._workers.get(name)
             if worker is None or worker.node_id != node_id:
@@ -46,6 +48,17 @@ class WorkerMembership:
         for name, worker in self._workers.items():
             if name not in seen:
                 worker.alive = False
+
+    def _newest_per_name(self, alive: Iterable[tuple[str, str, int]]) -> list[tuple[str, str, int]]:
+        """Un worker reiniciado aparece dos veces mientras el middleware no da por
+        muerta la identidad vieja (~30 s con Ray): se elige la que no conocíamos."""
+        chosen: dict[str, tuple[str, str, int]] = {}
+        for entry in alive:
+            name, node_id = entry[0], entry[1]
+            self._first_seen.setdefault(node_id, len(self._first_seen))
+            if name not in chosen or self._first_seen[node_id] > self._first_seen[chosen[name][1]]:
+                chosen[name] = entry
+        return list(chosen.values())
 
     def suspect(self, name: str) -> None:
         worker = self._workers.get(name)

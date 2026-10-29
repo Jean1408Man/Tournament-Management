@@ -124,3 +124,15 @@ def test_memory_limit_rejects_bot_allocation():
     assert result.kind is OutcomeKind.BOT_FAILURE
     assert result.winner_id == "random"
 
+
+
+def test_slow_bot_plays_legally_and_takes_half_a_second_per_move():
+    spec = replace(attempt().match, competitor_ids=("slow-1", "slow-2"), initial_piles=(2, 1))
+    started = time.monotonic()
+    result = run_match(
+        replace(attempt(), match=spec), (command("bots/slow.py"), command("bots/slow.py"))
+    )
+    elapsed = time.monotonic() - started
+    # 3 fichas, una por jugada: gana quien hace la tercera, el primer jugador.
+    assert (result.kind, result.winner_id) == (OutcomeKind.COMPLETED, "slow-1")
+    assert 1.4 <= elapsed < 3

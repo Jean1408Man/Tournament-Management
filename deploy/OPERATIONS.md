@@ -331,3 +331,34 @@ bash scripts/add-worker.sh tm-worker-3
 
   `stop-cluster.sh` retira también los workers añadidos: con un token viejo se
   reconectarían al head del siguiente arranque.
+
+## Pérdida del head de Ray (etapa 4.4)
+
+Observado el 29-10-2026 con `experiments/scenarios/head-loss.sh` (`docker kill
+tm-head` con una partida en curso):
+
+| Tiempo tras matar el head | Observado |
+|---|---|
+| 0–45 s | `/ready` sigue en 200 y el torneo en `running`: Ray Client espera reconectar |
+| ~50–70 s | El coordinador se detiene por el error de Ray ("Coordinador detenido por fallo de ejecución o persistencia"); `/ready` pasa a 503 y `/api/v1/workers` responde 503 (`execution_unavailable`) |
+| ~85 s | Los workers salen solos: sin GCS, sus procesos de Ray terminan |
+
+No se acepta ni inventa ningún resultado durante la caída: el torneo queda
+`running` en PostgreSQL. La pérdida del head **no tiene las garantías de la
+pérdida de un worker**: detiene toda la ejecución hasta recuperarlo.
+
+Procedimiento de recuperación (conserva PostgreSQL y artefactos):
+
+```bash
+docker start tm-head
+docker restart tm-worker-1 tm-worker-2
+docker restart tm-coordinator
+curl -i http://127.0.0.1:8000/ready
+```
+
+Al reiniciar, el coordinador ejecuta la recuperación de la etapa 3: el intento
+que estaba en curso queda `lost` (`coordinator_restart`) y se reemplaza con una
+generación nueva. En la prueba, el torneo terminó `completed` con un único
+resultado aceptado, unos 90 s después de empezar la recuperación. Si se
+añadieron workers con `add-worker.sh`, reiniciarlos también. Recrear todo con
+`stop-cluster.sh` + `start-cluster.sh` es equivalente.

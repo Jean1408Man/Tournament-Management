@@ -79,3 +79,15 @@ def test_new_worker_joins(membership):
                         ("tm-worker-3", "n3", 2)])
     assert membership.names()[-1] == "tm-worker-3"
     assert (membership.status("tm-worker-3"), membership.slots("tm-worker-3")) == (AVAILABLE, 2)
+
+
+@pytest.mark.parametrize("order", ["old-first", "new-first"])
+def test_restart_while_old_identity_is_still_listed_picks_the_new_one(membership, order):
+    # Docker 4.4: tras docker kill + docker start, Ray listó ~30 s el nodo viejo y el nuevo.
+    nodes = [("tm-worker-1", "n1", 1), ("tm-worker-1", "n1-restarted", 1), ("tm-worker-2", "n2", 1)]
+    if order == "new-first":
+        nodes[0], nodes[1] = nodes[1], nodes[0]
+    membership.observe(nodes)
+    assert membership.node_id("tm-worker-1") == "n1-restarted"
+    membership.observe(nodes)  # sigue eligiendo la nueva aunque Ray repita las dos
+    assert membership.node_id("tm-worker-1") == "n1-restarted"

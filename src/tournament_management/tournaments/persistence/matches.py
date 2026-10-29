@@ -161,6 +161,25 @@ class _PostgresMatches(PostgresMatchQueries, PostgresAttemptFailures, PostgresMa
             )
         return True
 
+    def rejection_reason(self, outcome: AttemptOutcome) -> str:
+        """Por qué try_accept rechazó el resultado; misma transacción, mismos bloqueos."""
+        if outcome.kind not in {OutcomeKind.COMPLETED, OutcomeKind.BOT_FAILURE}:
+            return "not_a_result"
+        try:
+            row = self._lock(outcome.match_id)
+        except KeyError:
+            return "unknown_match"
+        if row["accepted_attempt_id"] == outcome.attempt_id:
+            return "duplicate"
+        # Otro intento ya ganó la partida: este llega tarde aunque el torneo haya terminado.
+        if row["accepted_attempt_id"] is not None:
+            return "stale_attempt"
+        if row["tournament_state"] != TournamentState.RUNNING.value:
+            return "tournament_not_running"
+        if row["current_attempt_id"] != outcome.attempt_id:
+            return "stale_attempt"
+        return "invalid"
+
     def accepted(self, match_id: str) -> AttemptOutcome | None:
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT outcome FROM results WHERE match_id = %s", (match_id,))

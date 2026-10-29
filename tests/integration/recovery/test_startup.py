@@ -22,8 +22,13 @@ def test_lost_attempt_is_closed_before_replacement_and_late_result_rejected(scen
         assert recovered["current_attempt_id"] is None
         assert recovered["attempts"][0]["state"] == "lost"
         events = work.events.list("t1")
-        assert events[-1].event_type == "attempt.lost"
-        assert events[-1].detail == "coordinator_restart"
+        assert events[-2].event_type == "attempt.lost"
+        assert events[-2].detail == "coordinator_restart"
+        # El resultado tardío del intento perdido queda descartado con evidencia.
+        assert (events[-1].event_type, events[-1].attempt_id) == (
+            "result.discarded", old.attempt_id,
+        )
+        assert events[-1].detail.endswith("reason=stale_attempt")
     # Otro corte antes de emitir reemplazo no consume una generación ni duplica eventos.
     assert recovery.recover() == ("t1",)
     with scenario.work() as work:

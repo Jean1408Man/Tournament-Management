@@ -146,3 +146,44 @@ def test_database_error_before_accept_does_not_acknowledge_notification(api_fact
     assert api.create(key="another")[0] == 503
     match = api.request("GET", accepted["status_url"] + "/matches")[2]["items"][0]
     assert match["winner_id"] is None
+
+
+def test_late_result_of_replaced_attempt_is_discarded_with_evidence(api_factory):
+    """4.4 (D4.4 a): el intento viejo termina tarde con un resultado deportivo válido."""
+    import json
+
+    attempts = []
+
+    def execute(attempt, store, cancel=None):
+        attempts.append(attempt)
+        if attempt.generation == 1:
+            cancel.wait(timeout=5)  # sigue "jugando" hasta que el plazo lo invalida
+        return result(attempt)
+
+    api = api_factory(
+        runner=execute, turn_timeout_ms=10, match_timeout_ms=20, attempt_timeout_ms=100,
+        max_retries=1,
+    )
+    api.register("a")
+    api.register("b")
+    accepted = api.create()[2]
+    assert api.terminal(accepted["tournament_id"])["state"] == "completed"
+    match = api.request("GET", accepted["status_url"] + "/matches")[2]["items"][0]
+    old, new = attempts
+    assert match["accepted_attempt_id"] == new.attempt_id
+    assert [a["state"] for a in match["attempts"]] == ["failed", "accepted"]
+    # Mismo MatchSpec (posición, primer jugador y semilla), otro intento y generación mayor.
+    assert old.match == new.match and old.attempt_id != new.attempt_id
+    assert new.generation == old.generation + 1
+    with api.sse(accepted["tournament_id"]) as stream:
+        events = [
+            json.loads(line[5:]) for line in stream.read().decode().splitlines()
+            if line.startswith("data:")
+        ]
+    dispatched = [e["attempt_id"] for e in events if e["event_type"] == "attempt.dispatched"]
+    assert dispatched == [old.attempt_id, new.attempt_id]
+    discarded = [e for e in events if e["event_type"] == "result.discarded"]
+    assert [(e["attempt_id"], e["detail"]) for e in discarded] == [
+        (old.attempt_id, "worker=local kind=completed reason=stale_attempt"),
+    ]
+    assert sum(e["event_type"] == "result.accepted" for e in events) == 1

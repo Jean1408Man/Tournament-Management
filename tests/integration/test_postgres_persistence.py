@@ -391,3 +391,95 @@ def test_failed_migration_rolls_back_ddl_and_version(empty_database, monkeypatch
     assert scalar(empty_database, "SELECT to_regclass('partial_change')") is None
     assert scalar(empty_database, "SELECT to_regclass('schema_migrations')") is None
     assert scalar(empty_database, "SELECT to_regclass('tournaments')") is None
+
+
+def discards(database):
+    with PostgresUnitOfWork(database) as work:
+        return [
+            (e.attempt_id, e.detail)
+            for e in work.events.list("t1")
+            if e.event_type == "result.discarded"
+        ]
+
+
+def test_every_rejected_result_leaves_a_discard_event_with_its_reason(database):
+    service, _ = create(database)
+    first = issue(service)
+    service.invalidate(first.match.match_id, first.attempt_id)
+    second = issue(service, first.match, 2)
+    assert not service.accept(outcome(first))
+    assert service.accept(outcome(second))
+    assert not service.accept(outcome(second))
+    assert not service.accept(outcome(first))
+    assert discards(database) == [
+        (first.attempt_id, "worker=w1 kind=completed reason=stale_attempt"),
+        (second.attempt_id, "worker=w1 kind=completed reason=duplicate"),
+        (first.attempt_id, "worker=w1 kind=completed reason=stale_attempt"),
+    ]
+    assert scalar(database, "SELECT count(*) FROM results") == 1
+
+
+def test_late_failure_and_cancelled_tournament_reasons(database):
+    service, _ = create(database)
+    attempt = issue(service)
+    late_failure = replace(
+        outcome(attempt), kind=OutcomeKind.INFRASTRUCTURE_FAILURE, winner_id=""
+    )
+    assert not service.accept(late_failure)
+    service.cancel_tournament("t1")
+    assert not service.accept(outcome(attempt))
+    assert [detail.rsplit("=", 1)[1] for _, detail in discards(database)] == [
+        "not_a_result", "tournament_not_running",
+    ]
+    assert scalar(database, "SELECT state FROM tournaments") == "cancelled"
+
+
+def test_dispatched_event_names_the_worker(database):
+    service, _ = create(database)
+    attempt = issue(service)
+    service.dispatched(attempt, "tm-worker-2")
+    with PostgresUnitOfWork(database) as work:
+        last = work.events.list("t1")[-1]
+    assert (last.event_type, last.attempt_id, last.detail) == (
+        "attempt.dispatched", attempt.attempt_id, "worker=tm-worker-2",
+    )
+
+
+def test_lab_injection_goes_through_real_acceptance_and_is_discarded(database):
+    """4.4 (D4.4 b): la herramienta de laboratorio no puede imponer un resultado viejo."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    service, _ = create(database)
+    first = issue(service)
+    service.invalidate(first.match.match_id, first.attempt_id)
+    second = issue(service, first.match, 2)
+    assert service.accept(outcome(second))
+    script = Path(__file__).resolve().parents[2] / "experiments/scenarios/inject_late_result.py"
+    run = subprocess.run(
+        [sys.executable, "-", first.attempt_id], input=script.read_text(encoding="utf-8"),
+        env={"PATH": "/usr/bin:/bin", "TM_DATABASE_URL": database},
+        capture_output=True, text=True, timeout=30,
+    )
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == {
+        "attempt_id": first.attempt_id, "generation": 1, "accepted": False,
+    }
+    assert discards(database)[-1] == (
+        first.attempt_id, "worker=lab-injection kind=completed reason=stale_attempt",
+    )
+    with PostgresUnitOfWork(database) as work:
+        assert work.matches.accepted(first.match.match_id) == outcome(second)
+
+
+def test_late_result_after_tournament_finished_is_stale_not_cancelled(database):
+    service, _ = create(database, count=2)
+    first = issue(service)
+    service.invalidate(first.match.match_id, first.attempt_id)
+    second = issue(service, first.match, 2)
+    assert service.accept(outcome(second))
+    assert scalar(database, "SELECT state FROM tournaments") == "completed"
+    assert not service.accept(outcome(first))
+    assert discards(database)[-1][1].endswith("reason=stale_attempt")
