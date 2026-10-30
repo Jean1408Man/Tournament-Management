@@ -21,6 +21,7 @@ ALLOWED = {
     "simulation": {"simulation", "shared", "game", "tournaments", "execution"},
     "database": {"database", "shared", "competitors", "tournaments", "events"},
     "api": {"api", "shared", "competitors", "tournaments", "execution", "events"},
+    "verification": {"verification", "shared", "tournaments"},
 }
 HTTP = {"fastapi", "starlette", "pydantic", "uvicorn", "requests", "httpx"}
 DATABASE = {"psycopg", "sqlite3", "sqlalchemy"}

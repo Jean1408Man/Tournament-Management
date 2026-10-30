@@ -25,8 +25,11 @@ TM_BACKEND=ray bash scripts/start-cluster.sh
   Git: se regenera ejecutando el script):
   - `resumen.txt`: pasos con hora y cada comprobación como `OK` / `FALLO` / `INFO`;
   - `<torneo>.tournament.json`, `<torneo>.matches.json`, `<torneo>.events.json`:
-    estado, partidas con sus intentos, e historial de eventos;
+    estado, todas las partidas (paginadas) con sus intentos, e historial completo
+    de eventos (se lee hasta que el servidor cierra el flujo);
   - `workers.log`: muestras de `/api/v1/workers` con hora;
+  - `verify.json`: informe de `tm verify` (invariantes I1–I5 de la etapa 5.2)
+    sobre todos los torneos guardados; una violación cuenta como comprobación fallida;
   - extras de cada escenario (`injection.json`, `observacion.log`, `coordinator.log`).
 - Termina con **código 0 si todas las comprobaciones pasan** y 1 si alguna falla.
 - Deja el clúster como estaba: vuelve a arrancar el worker que haya matado o
@@ -57,6 +60,8 @@ TM_BACKEND=ray bash scripts/start-cluster.sh
 - `lib.sh`: llamadas a la API, espera de eventos, guardado de evidencia y
   acciones sobre el clúster.
 - `checks.py`: lectura de la evidencia y comprobaciones comunes.
+- `tm verify --evidence <carpeta>`: comprobaciones comunes a todos los
+  escenarios; `finish()` lo ejecuta con `PYTHONPATH=src` (requiere Python 3.12).
 - `inject_late_result.py`: inyección de laboratorio de un resultado tardío.
   Se ejecuta dentro del coordinador y pasa por el mismo código de aceptación;
   no es un endpoint.

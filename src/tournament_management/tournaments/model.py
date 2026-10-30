@@ -47,9 +47,7 @@ class TournamentSpec(Message):
 
     def match(self, pairing_id: str, competitors: tuple[str, str]) -> MatchSpec:
         hashes = dict(zip(self.competitor_ids, self.artifact_hashes, strict=True))
-        # Los nombres r1-m1/m1 de los formatos se repiten entre torneos.
-        # Un UUID derivado evita colisiones sin depender del orden de ejecución.
-        identifier = str(uuid5(NAMESPACE_URL, f"tm:{self.tournament_id}:{pairing_id}"))
+        identifier = match_identifier(self.tournament_id, pairing_id)
         seed = int.from_bytes(
             hashlib.sha256(f"{self.seed}:{pairing_id}".encode()).digest()[:8], "big"
         )
@@ -64,13 +62,21 @@ class TournamentSpec(Message):
         )
 
 
+def match_identifier(tournament_id: str, pairing_id: str) -> str:
+    # Los nombres r1-m1/m1 de los formatos se repiten entre torneos.
+    # Un UUID derivado evita colisiones sin depender del orden de ejecución.
+    return str(uuid5(NAMESPACE_URL, f"tm:{tournament_id}:{pairing_id}"))
+
+
+def new_format(format_name: str, competitor_ids: tuple[str, ...]) -> TournamentFormat:
+    if format_name == "elimination":
+        return Elimination(competitor_ids)
+    return RoundRobin(competitor_ids)
+
+
 def rebuild(spec: TournamentSpec, results: tuple[AttemptOutcome, ...]) -> TournamentFormat:
     """Reproduce únicamente resultados aceptados, en orden de confirmación."""
-    tournament = (
-        Elimination(spec.competitor_ids)
-        if spec.format_name == "elimination"
-        else RoundRobin(spec.competitor_ids)
-    )
+    tournament = new_format(spec.format_name, spec.competitor_ids)
     for outcome in results:
         pairing = next(
             (

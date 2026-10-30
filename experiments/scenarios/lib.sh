@@ -56,6 +56,7 @@ run_checks() {
 }
 
 finish() {
+  verify_evidence
   if ((FAILURES)); then
     log "Resultado: $FAILURES comprobación(es) fallida(s)"
     exit 1
@@ -125,26 +126,60 @@ sample_workers() {  # etiqueta → añade una muestra con hora a workers.log
     >> "$RESULTS/workers.log"
 }
 
-dump() {  # torneo → guarda torneo, partidas y eventos
+dump() {  # torneo → guarda torneo, todas las partidas y el historial completo
   "$PY" - "$API" "$1" "$RESULTS" <<'EOF'
-import json, sys, urllib.request
+import json, sys, time, urllib.request
 api, tournament, out = sys.argv[1:]
-def get(path):
-    with urllib.request.urlopen(api + path, timeout=10) as r:
+base = f"{api}/api/v1/tournaments/{tournament}"
+def get(url):
+    with urllib.request.urlopen(url, timeout=10) as r:
         return json.load(r)
-json.dump(get(f"/api/v1/tournaments/{tournament}"), open(f"{out}/{tournament}.tournament.json", "w"), indent=1)
-json.dump(get(f"/api/v1/tournaments/{tournament}/matches?limit=100"), open(f"{out}/{tournament}.matches.json", "w"), indent=1)
-events = []
-try:
-    with urllib.request.urlopen(f"{api}/api/v1/tournaments/{tournament}/events", timeout=3) as r:
-        for raw in r:
-            line = raw.decode()
-            if line.startswith("data:"):
-                events.append(json.loads(line[5:]))
-except OSError:
-    pass  # Torneo aún abierto: se guarda lo leído hasta el plazo.
-json.dump(events, open(f"{out}/{tournament}.events.json", "w"), indent=1)
+def save(name, data):
+    with open(f"{out}/{tournament}.{name}.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1)
+save("tournament", get(base))
+items, total = [], None
+while total is None or len(items) < total:  # la API sirve como mucho 100 por página
+    page = get(f"{base}/matches?offset={len(items)}&limit=100")
+    items, total = items + page["items"], page["total"]
+    if not page["items"]:
+        break
+save("matches", {"items": items, "total": total})
+# El servidor cierra el flujo cuando el torneo es terminal; si se corta antes,
+# se reanuda tras el último evento recibido. Lo que falte lo marca tm verify.
+events, closed, deadline = [], False, time.monotonic() + 60
+while not closed and time.monotonic() < deadline:
+    after = events[-1]["sequence"] if events else 0
+    try:
+        with urllib.request.urlopen(f"{base}/events?after={after}", timeout=10) as r:
+            for raw in r:
+                line = raw.decode()
+                if line.startswith("data:"):
+                    event = json.loads(line[5:])
+                    if "sequence" not in event:  # stream.error: la base falló a mitad
+                        raise ConnectionError(event)
+                    events.append(event)
+        closed = True
+    except OSError:
+        time.sleep(0.5)
+if not closed:
+    print(f"Aviso: el historial de {tournament} no llegó al final en 60 s", file=sys.stderr)
+save("events", events)
 EOF
+}
+
+verify_evidence() {  # tm verify (5.2) sobre todo lo guardado; informe en verify.json
+  local status
+  set +e
+  PYTHONPATH=src PYTHONIOENCODING=utf-8 "$PY" -m tournament_management verify     --evidence "$RESULTS" > "$RESULTS/verify.json"
+  status=$?
+  set -e
+  if ((status)); then
+    log "FALLO tm verify: invariantes violados o evidencia incompleta (verify.json)"
+    FAILURES=$((FAILURES + 1))
+  else
+    log "OK    tm verify: sin violaciones de I1–I5 (verify.json)"
+  fi
 }
 
 # --- Acciones sobre el clúster: Docker o local (scripts/local-cluster.sh) ---
