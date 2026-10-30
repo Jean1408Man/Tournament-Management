@@ -130,8 +130,9 @@ def doctor(settings: Settings) -> None:
     from tournament_management.app import check_storage
 
     configuration = asdict(settings)
-    if configuration["database_url"]:
-        configuration["database_url"] = "[oculta]"
+    for secret in ("database_url", "internal_token"):
+        if configuration[secret]:
+            configuration[secret] = "[oculta]"
     report = {
         "configuration": configuration,
         "versions": {
@@ -141,6 +142,7 @@ def doctor(settings: Settings) -> None:
         },
         "scope": "configuration_and_storage",
         "cluster_checked": False,
+        "warnings": settings.timing_warnings(),
     }
     try:
         check_storage(settings, create=True)
@@ -217,8 +219,22 @@ def registry(settings: Settings, args: argparse.Namespace, parser: argparse.Argu
     )
     try:
         if args.command == "verify-artifact":
-            content = store.get(args.artifact_hash)
-            report = {"artifact_hash": args.artifact_hash, "size_bytes": len(content)}
+            reader = store
+            if settings.artifact_url:
+                # En un worker (4.2): descarga del coordinador, no volumen local.
+                from tournament_management.competitors.remote_store import RemoteArtifactStore
+
+                reader = RemoteArtifactStore(
+                    settings.artifact_url, settings.internal_token,
+                    max_bytes=settings.artifact_max_bytes,
+                    timeout_ms=settings.artifact_download_timeout_ms,
+                )
+            content = reader.get(args.artifact_hash)
+            report = {
+                "artifact_hash": args.artifact_hash,
+                "size_bytes": len(content),
+                "source": "download" if settings.artifact_url else "local",
+            }
         elif args.command == "inspect-bot":
             report = json.loads(service.get(args.competitor_id).to_json())
         else:

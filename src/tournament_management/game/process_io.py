@@ -20,10 +20,20 @@ class BotFault(Exception):
         super().__init__(reason)
 
 
+class RefereeStalled(OSError):
+    """El árbitro no se ejecutó durante la partida (worker congelado, 4.4 D4.8).
+
+    Sus plazos dejan de medir al bot: un timeout es un fallo de infraestructura.
+    """
+
+
 class BotPipes:
-    def __init__(self, memory_limit: int, output_limit: int):
+    def __init__(self, memory_limit: int, output_limit: int, stall_threshold_ms: int = 500):
         self.memory_limit = memory_limit
         self.output_limit = output_limit
+        self.stall_threshold = stall_threshold_ms / 1000
+        # Tiempo total que el árbitro estuvo sin ejecutarse en esta partida.
+        self.stalled = 0.0
         self.processes: list[subprocess.Popen] = []
         self.selector = selectors.DefaultSelector()
         self.buffers = [bytearray(), bytearray()]
@@ -53,12 +63,16 @@ class BotPipes:
         data = encode(message).encode("utf-8")
         fd = self.processes[player].stdin.fileno()
         offset = 0
+        started = last = time.monotonic()
+        max_gap = 0.0
         while offset < len(data):
+            now, max_gap = self._tick(last, max_gap)
+            last = now
             if cancel is not None and cancel.is_set():
                 raise InterruptedError("cancelled")
-            remaining = deadline - time.monotonic()
+            remaining = deadline - now
             if remaining <= 0:
-                raise BotFault(player, "timeout al enviar mensaje")
+                self._timeout(player, "timeout al enviar mensaje", started, now, deadline, max_gap)
             with selectors.DefaultSelector() as writer:
                 writer.register(fd, selectors.EVENT_WRITE)
                 if not writer.select(min(remaining, 0.05)):
@@ -71,7 +85,13 @@ class BotPipes:
     def read(
         self, player: int, deadline: float, cancel: threading.Event | None,
     ) -> dict:
+        # Diagnóstico (4.4): cada vuelta espera ≤ 50 ms. Un salto mucho mayor entre
+        # dos vueltas significa que el propio árbitro no se ejecutó (worker congelado).
+        started = last = time.monotonic()
+        max_gap = 0.0
         while True:
+            now, max_gap = self._tick(last, max_gap)
+            last = now
             line_end = self.buffers[player].find(b"\n")
             if line_end >= 0:
                 line = bytes(self.buffers[player][:line_end])
@@ -87,9 +107,9 @@ class BotPipes:
                 raise BotFault(player, "El bot terminó prematuramente")
             if cancel is not None and cancel.is_set():
                 raise InterruptedError("cancelled")
-            remaining = deadline - time.monotonic()
+            remaining = deadline - now
             if remaining <= 0:
-                raise BotFault(player, "timeout de respuesta")
+                self._timeout(player, "timeout de respuesta", started, now, deadline, max_gap)
             for key, _ in self.selector.select(min(remaining, 0.05)):
                 index, channel = key.data
                 chunk = os.read(key.fileobj.fileno(), 4096)
@@ -105,6 +125,31 @@ class BotPipes:
                     self.buffers[index].extend(chunk)
                     if len(self.buffers[index]) > MAX_MESSAGE_BYTES:
                         raise BotFault(index, "Mensaje del bot demasiado grande")
+
+    def _tick(self, last: float, max_gap: float) -> tuple[float, float]:
+        """Mide el salto desde la vuelta anterior; cada vuelta espera ≤ 50 ms."""
+        now = time.monotonic()
+        gap = now - last
+        if gap > self.stall_threshold:
+            self.stalled += gap
+        return now, max(max_gap, gap)
+
+    def _timeout(
+        self, player: int, what: str, started: float, now: float, deadline: float,
+        max_gap: float,
+    ) -> None:
+        measured = (
+            f"plazo {(deadline - started) * 1000:.0f} ms, "
+            f"transcurrido {(now - started) * 1000:.0f} ms, "
+            f"mayor espera del bucle {max_gap * 1000:.0f} ms"
+        )
+        if self.stalled:
+            # Si el árbitro estuvo congelado en algún momento de la partida, sus
+            # plazos ya no miden al bot: se reintenta en vez de declarar derrota.
+            raise RefereeStalled(
+                f"referee_stalled ({what}; congelado {self.stalled * 1000:.0f} ms; {measured})"
+            )
+        raise BotFault(player, f"{what} ({measured})")
 
     def close(self) -> None:
         for process in self.processes:

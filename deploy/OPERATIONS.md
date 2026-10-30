@@ -28,8 +28,9 @@ Son límites, no reservas físicas. Presupuesto orientativo: 4 CPU y al menos
 8 GiB para Docker, con margen adicional para el sistema operativo. Cada nodo
 Ray usa 256 MiB de object store. Los valores están en start-cluster.sh.
 El coordinador conserva su estado local en tm-state y PostgreSQL sus datos en
-tm-postgres-data. Desde 3.2, los ejecutables se guardan en tm-artifacts: el
-coordinador tiene escritura y los workers solo lectura, sin credenciales SQL.
+tm-postgres-data. Los ejecutables se guardan en tm-artifacts, que solo monta el
+coordinador. Desde 4.2 los workers no tienen ese volumen ni credenciales SQL:
+descargan cada bot por hash desde el coordinador (ver "Artefactos internos").
 Los tres volúmenes se preservan al detener el clúster. El
 arranque requiere que la imagen `postgres:16.6-bookworm` esté disponible y crea
 la base `tournament_management`; el coordinador aplica el esquema idempotente.
@@ -130,9 +131,10 @@ y [opciones HTTP de uv](https://docs.astral.sh/uv/configuration/environment/).
 Resultado esperado: PostgreSQL disponible, tres nodos Ray vivos (head sin CPU y
 dos workers con CPU), cuatro contenedores de aplicación con la misma imagen,
 resolución DNS interna y API saludable.
-`/ready` devuelve 200 con backend local, esquema migrado y almacenamiento
-disponible. Con backend Ray devuelve 503: la ejecución de torneos en Ray
-todavía no está implementada. `/health` solo comprueba vida del proceso.
+`/ready` devuelve 200 con esquema migrado, almacenamiento disponible y
+coordinador sano, con cualquiera de los dos backends. Con Ray, la falta de
+workers no cambia `/ready`; se ve en `/api/v1/workers`. `/health` solo
+comprueba vida del proceso.
 
 El arranque espera hasta TM_START_TIMEOUT segundos (180 por defecto) por etapa.
 Si falla muestra logs y conserva contenedores para diagnóstico; no borra el
@@ -178,10 +180,11 @@ docker volume create --label org.tournament-management.project=tournament-manage
 docker run -d --pull never --init --name tm-head --hostname tm-head --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m tournament-management:step-1.5 ray-head
 docker exec tm-head ray health-check --address=127.0.0.1:6379
 docker volume create --label org.tournament-management.project=tournament-management tm-artifacts
-docker run -d --pull never --init --name tm-worker-1 --hostname tm-worker-1 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --mount source=tm-artifacts,target=/var/lib/tm/artifacts,readonly tournament-management:step-1.5 ray-worker
-docker run -d --pull never --init --name tm-worker-2 --hostname tm-worker-2 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --mount source=tm-artifacts,target=/var/lib/tm/artifacts,readonly tournament-management:step-1.5 ray-worker
+TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+docker run -d --pull never --init --name tm-worker-1 --hostname tm-worker-1 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --env TM_ARTIFACT_URL=http://tm-coordinator:8000 --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 ray-worker
+docker run -d --pull never --init --name tm-worker-2 --hostname tm-worker-2 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --env TM_ARTIFACT_URL=http://tm-coordinator:8000 --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 ray-worker
 docker exec tm-head python -m tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2
-docker run -d --pull never --init --name tm-coordinator --hostname tm-coordinator --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 1g -p 127.0.0.1:8000:8000 --mount source=tm-state,target=/var/lib/tm --mount source=tm-artifacts,target=/var/lib/tm/artifacts tournament-management:step-1.5 coordinator
+docker run -d --pull never --init --name tm-coordinator --hostname tm-coordinator --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 1g -p 127.0.0.1:8000:8000 --mount source=tm-state,target=/var/lib/tm --mount source=tm-artifacts,target=/var/lib/tm/artifacts --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 coordinator
 ```
 
 Esperar a que las comprobaciones intermedias tengan éxito antes de continuar.
@@ -192,25 +195,44 @@ no usar como servicio público para bots no confiables.
 
 ## Artefactos internos (etapa 3.2)
 
-Reconstruir la imagen y recrear contenedores incorpora el nuevo montaje. No basta
-con reiniciar contenedores creados antes de 3.2. El volumen tm-artifacts se monta
-en `/var/lib/tm/artifacts`; está fuera de los puertos publicados y los workers
-lo reciben con `readonly`. El head no lo monta. El almacenamiento compartido
-presupone el despliegue actual en un único host Docker.
+El volumen tm-artifacts se monta en `/var/lib/tm/artifacts` del coordinador.
+Hasta 4.1 los workers lo recibían con `readonly`; desde 4.2 no lo montan ni el
+head ni los workers. Reconstruir la imagen y recrear los contenedores con
+`start-cluster.sh` aplica el cambio; reiniciar contenedores antiguos no basta.
 
 `tm register-bot` publica y sincroniza un archivo completo antes del commit SQL.
-`tm inspect-bot` consulta el registro y verifica hash/tamaño al leerlo. Los workers
-pueden usar `tm verify-artifact --artifact-hash HASH` sin URL PostgreSQL.
-`bash scripts/probe-artifact.sh HASH` aplica esa verificación en ambos workers y
-comprueba sus montajes. Una lectura de objeto alterado o ausente falla: no se
-repara automáticamente ni se acepta otro código bajo el mismo hash.
+`tm inspect-bot` consulta el registro y verifica hash/tamaño al leerlo.
+
+### Descarga desde los workers (etapa 4.2)
+
+- El coordinador sirve `GET /internal/artifacts/{hash}` en su puerto 8000. Es
+  una ruta interna: no forma parte del contrato `/api/v1` ni del OpenAPI.
+- Exige la cabecera `Authorization: Bearer <TM_INTERNAL_TOKEN>`; sin token
+  válido responde 401. Si el coordinador no tiene token configurado, la ruta
+  responde 404. Un archivo que no supera la verificación en el coordinador
+  responde 503 y no se sirve.
+- `start-cluster.sh` genera un token aleatorio en cada arranque (salvo que
+  `TM_INTERNAL_TOKEN` esté exportado) y lo pasa al coordinador y a los
+  workers. Los workers reciben además `TM_ARTIFACT_URL=http://tm-coordinator:8000`.
+  El token no se guarda en `.env`, pero es visible con `docker inspect`, igual
+  que la contraseña de PostgreSQL: es un control de laboratorio.
+- Cada intento descarga sus dos bots, comprueba tamaño y SHA-256 y los copia a
+  una carpeta temporal propia que se borra al terminar. No hay caché. Una
+  descarga fallida, cortada o corrupta es un fallo de infraestructura y nunca
+  una derrota del bot.
+- `tm verify-artifact --artifact-hash HASH` descarga y verifica cuando
+  `TM_ARTIFACT_URL` está configurada (en los workers); si no, lee el volumen
+  local. `bash scripts/probe-artifact.sh HASH` comprueba en ambos workers que
+  **no** montan `tm-artifacts` y que la descarga verifica.
+- Una lectura de un objeto alterado o ausente falla: no se repara
+  automáticamente ni se acepta otro código bajo el mismo hash.
 
 Conservar y respaldar tm-artifacts junto con tm-postgres-data: conservar solo la
 base no conserva los bytes. Los archivos `.upload-*` que pueda dejar un corte
 abrupto no se anuncian ni se ejecutan. Un fallo SQL posterior a la publicación
 puede dejar objetos completos sin referencia; no hay recolección automática.
-El acceso por hash y los montajes de solo lectura no aíslan código hostil ni
-restringen a un administrador del daemon Docker.
+El acceso por hash y el token interno no aíslan código hostil ni restringen a
+un administrador del daemon Docker.
 
 ## API y ejecución local (etapa 3.3)
 
@@ -224,10 +246,12 @@ bash scripts/cluster-status.sh
 curl -i http://127.0.0.1:8000/ready
 ```
 
-`TM_BACKEND` se lee de `.env` o del entorno; usa `local` para probar la API.
-Con `ray` siguen disponibles las consultas y el registro, pero crear torneos
-responde 503. `/api/v1/workers` informa las identidades que ofrece el backend
-de ejecución: no presenta nodos de membresía Ray como ejecutores de partidas.
+`TM_BACKEND` se lee de `.env` o del entorno. Con `local` las partidas se juegan
+en el coordinador. Desde 4.1, con `ray` se juegan en los workers: el
+coordinador elige el worker, Ray no reintenta y `/api/v1/workers` muestra cada
+worker por su hostname (`tm-worker-1`), sin identificadores internos de Ray.
+Los workers arrancan con `--node-name` igual a su hostname; hay que recrear
+los contenedores con la imagen nueva para que lo tengan.
 
 El [recorrido HTTP](../examples/api/README.md) permite registrar bots, ejecutar
 ambos formatos, consultar intentos y reanudar eventos. El cierre del servidor
@@ -282,3 +306,81 @@ no implementa elección de líder ni exclusión entre coordinadores.
 Las pruebas automatizadas de 3.4 usan PostgreSQL y HTTP reales con SIGKILL de
 procesos propios. No se ejecutaron estas operaciones Docker durante la entrega.
 El mecanismo de distribución de artefactos entre máquinas permanece en 4.2.
+
+## Membresía, capacidad y plazos (etapa 4.3)
+
+- `/api/v1/workers` muestra cada worker por su nombre con estado propio:
+  - `available`: puede recibir intentos;
+  - `suspected`: un intento suyo murió por Ray mientras Ray aún lo daba por
+    vivo (tras `docker kill`, Ray tarda unos 30 s en confirmarlo). No recibe
+    intentos durante `TM_SUSPECT_COOLDOWN_MS` (45 s) o hasta que reaparece
+    reiniciado;
+  - `lost`: se vio antes y Ray ya no lo da por vivo; capacidad 0.
+- Sin workers `available` con hueco, el coordinador espera sin crear intentos
+  ni gastar reintentos. Si pasan `TM_CAPACITY_WAIT_MS` (300 s), el torneo queda
+  `blocked` con el evento `tournament.blocked` y detalle `no_worker_capacity`.
+- Plazo del intento: `TM_ATTEMPT_TIMEOUT_MS` ≥ `TM_MATCH_TIMEOUT_MS` + 2 ×
+  `TM_ARTIFACT_DOWNLOAD_TIMEOUT_MS` + 10 s (por defecto 90 ≥ 60 + 20 + 10).
+  Si no se cumple, el arranque y `tm doctor` avisan, pero no se impide arrancar.
+  Medido en Docker: un intento normal tarda de 0,2 a 2,3 s.
+- Añadir un worker al clúster en marcha (misma imagen y token que el coordinador):
+
+```bash
+bash scripts/add-worker.sh tm-worker-3
+```
+
+  `stop-cluster.sh` retira también los workers añadidos: con un token viejo se
+  reconectarían al head del siguiente arranque.
+
+## Pérdida del head de Ray (etapa 4.4)
+
+Observado el 29-10-2026 con `experiments/scenarios/head-loss.sh` (`docker kill
+tm-head` con una partida en curso):
+
+| Tiempo tras matar el head | Observado |
+|---|---|
+| 0–45 s | `/ready` sigue en 200 y el torneo en `running`: Ray Client espera reconectar |
+| ~50–70 s | El coordinador se detiene por el error de Ray ("Coordinador detenido por fallo de ejecución o persistencia"); `/ready` pasa a 503 y `/api/v1/workers` responde 503 (`execution_unavailable`) |
+| ~85 s | Los workers salen solos: sin GCS, sus procesos de Ray terminan |
+
+No se acepta ni inventa ningún resultado durante la caída: el torneo queda
+`running` en PostgreSQL. La pérdida del head **no tiene las garantías de la
+pérdida de un worker**: detiene toda la ejecución hasta recuperarlo.
+
+Procedimiento de recuperación (conserva PostgreSQL y artefactos):
+
+```bash
+docker start tm-head
+docker restart tm-worker-1 tm-worker-2
+docker restart tm-coordinator
+curl -i http://127.0.0.1:8000/ready
+```
+
+Al reiniciar, el coordinador ejecuta la recuperación de la etapa 3: el intento
+que estaba en curso queda `lost` (`coordinator_restart`) y se reemplaza con una
+generación nueva. En la prueba, el torneo terminó `completed` con un único
+resultado aceptado, unos 90 s después de empezar la recuperación. Si se
+añadieron workers con `add-worker.sh`, reiniciarlos también. Recrear todo con
+`stop-cluster.sh` + `start-cluster.sh` es equivalente.
+
+## Modo sin Docker (etapa 4.4)
+
+Arranque paso a paso en [ARRANQUE.md](ARRANQUE.md). Detalles de operación:
+
+- `scripts/local-cluster.sh` lanza cada nodo de Ray como un proceso propio
+  (`scripts/local_cluster.py`, con la misma utilidad de varios nodos que usan
+  las pruebas). `ray start` no se usa: en WSL se colgaba al arrancar el head y
+  llegó a dejar WSL sin responder (ver `docs/progress.md`, paso 11).
+- PostgreSQL es una instancia propia en `TM_LOCAL_HOME/postgres`, accesible solo
+  por socket Unix en `TM_LOCAL_HOME/run` (puerto lógico 5433); no abre TCP ni
+  usa el servicio del sistema. Los datos persisten entre `stop` y `start`.
+- Mismos parámetros que Docker: head sin CPU, workers `tm-worker-N` con el
+  recurso `tm_worker`, descarga de bots por `http://127.0.0.1:8000` con un token
+  nuevo por arranque, variables gRPC y `TM_BACKEND=ray`.
+- `kill`, `pause`, `resume` y `restore` actúan sobre el proceso de un nodo y
+  todos sus descendientes, igual que `docker kill`, `pause`, `unpause` y `start`
+  sobre un contenedor.
+- Antes de arrancar se limpian restos de Ray (`ray stop --force` y la sesión
+  vieja en `/tmp/ray`): sin eso, un worker falló al registrarse tras un `stop`.
+- Lo que solo da Docker: límites de CPU y memoria por componente y aislamiento
+  de archivos entre roles. Sin Docker, un bot comparte máquina con todo lo demás.

@@ -85,6 +85,10 @@ class LocalExecution:
                 capacity=self._capacity, running_attempts=running,
             ),)
 
+    def worker_of(self, attempt_id: str) -> str:
+        with self._lock:
+            return "local" if attempt_id in self._attempts else ""
+
     def close(self) -> None:
         with self._lock:
             self._closed = True

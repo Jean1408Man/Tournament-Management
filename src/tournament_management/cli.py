@@ -21,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
         "migrate": "Aplica el esquema pendiente de PostgreSQL.",
         "register-bot": "Registra un nuevo archivo Python y sus metadatos durables.",
         "inspect-bot": "Consulta un bot registrado y comprueba sus bytes.",
-        "verify-artifact": "Verifica por hash un artefacto del volumen interno.",
+        "verify-artifact": "Verifica por hash un artefacto local o descargado (TM_ARTIFACT_URL).",
     }.items():
         command = commands.add_parser(name, help=description, description=description)
         for field in fields(Settings):

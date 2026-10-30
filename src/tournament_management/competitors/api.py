@@ -1,16 +1,19 @@
 """Subida binaria acotada, sin multipart ni archivos de clientes en rutas ejecutables."""
 
+import hmac
 import io
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, Header, Query, Request, Response
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import ClientDisconnect
 
 from tournament_management.api.common import Identifier, Name
 from tournament_management.api.dependencies import IdempotencyKey, Services
 from tournament_management.api.errors import ApiError
+from tournament_management.competitors.artifact_store import ArtifactIntegrityError
+from tournament_management.competitors.model import validate_artifact_hash
 from tournament_management.competitors.schemas import CompetitorResponse
 
 router = APIRouter(prefix="/competitors", tags=["competitors"])
@@ -78,3 +81,31 @@ async def register(
 @router.get("/{competitor_id}", response_model=CompetitorResponse)
 def get_competitor(competitor_id: Identifier, runtime: Services) -> dict:
     return asdict(runtime.competitors.get(competitor_id))
+
+
+# Descarga interna para los workers (4.2): fuera de /api/v1 y del OpenAPI congelado.
+internal_router = APIRouter(prefix="/internal/artifacts", include_in_schema=False)
+
+
+@internal_router.get("/{artifact_hash}")
+def download_artifact(
+    artifact_hash: str,
+    runtime: Services,
+    authorization: Annotated[str | None, Header()] = None,
+) -> Response:
+    if not runtime.internal_token or runtime.artifacts is None:
+        raise ApiError(404, "not_found", "El recurso no existe o no está disponible")
+    expected = f"Bearer {runtime.internal_token}".encode()
+    if not hmac.compare_digest((authorization or "").encode(), expected):
+        raise ApiError(401, "unauthorized", "Token interno ausente o inválido")
+    try:
+        validate_artifact_hash(artifact_hash)
+        content = runtime.artifacts.get(artifact_hash)
+    except ValueError as exc:
+        raise ApiError(404, "not_found", "El recurso no existe o no está disponible") from exc
+    except ArtifactIntegrityError as exc:
+        if isinstance(exc.__cause__, FileNotFoundError):
+            raise ApiError(404, "not_found", "El recurso no existe o no está disponible") from exc
+        # El archivo del coordinador no supera su propia verificación: no se sirve.
+        raise
+    return Response(content, media_type="application/octet-stream")

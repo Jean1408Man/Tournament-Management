@@ -29,9 +29,12 @@ class RayConnection:
             return [
                 {
                     "node_id": node["NodeID"],
+                    # Identidad pública: el entrypoint fija --node-name al hostname.
+                    "name": node.get("NodeName") or node["NodeManagerAddress"],
                     "address": node["NodeManagerAddress"],
                     "cpus": node.get("Resources", {}).get("CPU", 0),
                     "worker": node.get("Resources", {}).get("tm_worker", 0) > 0,
+                    "slots": int(node.get("Resources", {}).get("tm_worker", 0)),
                 }
                 for node in self._ray.nodes()
                 if node["Alive"]

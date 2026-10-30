@@ -28,8 +28,10 @@ def test_sse_reconnect_excludes_confirmed_event_and_keeps_order(api):
     with api.sse(identifier) as stream:
         assert stream.headers["Content-Type"].startswith("text/event-stream")
         history = list(frames(stream))
-    assert [frame["data"]["sequence"] for frame in history] == [1, 2, 3]
-    assert history[-1]["event"] == "result.accepted"
+    assert [frame["data"]["sequence"] for frame in history] == [1, 2, 3, 4]
+    assert [frame["event"] for frame in history] == [
+        "tournament.created", "attempt.issued", "attempt.dispatched", "result.accepted",
+    ]
     with api.sse(identifier, last=history[0]["id"]) as stream:
         tail = list(frames(stream))
     assert tail == history[1:]
@@ -110,5 +112,6 @@ def test_replay_spans_multiple_database_pages(api):
         work.commit()
     with api.sse(identifier) as response:
         history = list(frames(response))
-    assert len(history) == 108
-    assert [frame["data"]["sequence"] for frame in history] == list(range(1, 109))
+    # 4 eventos del torneo (con attempt.dispatched desde 4.4) + 105 de relleno.
+    assert len(history) == 109
+    assert [frame["data"]["sequence"] for frame in history] == list(range(1, 110))

@@ -140,6 +140,12 @@ def fake_commands(tmp_path):
         "with open(os.environ['COMMAND_LOG'], 'a') as f:\n"
         "    f.write(json.dumps(sys.argv) + '\\n')\n"
         "if os.path.basename(sys.argv[0]) == 'docker' and 'inspect' in sys.argv:\n"
+        "    if sys.argv[-1] in os.environ.get('TEST_MISSING', '').split(','):\n"
+        "        sys.exit(1)\n"
+        "    if any('.Config.Env' in a for a in sys.argv):\n"
+        "        print('PATH=/usr/bin')\n"
+        "        print('TM_INTERNAL_TOKEN=' + os.environ.get('TEST_TOKEN', ''))\n"
+        "        sys.exit(0)\n"
         "    if os.environ.get('TEST_START') and sys.argv[1:3] == ['container', 'inspect']:\n"
         "        calls = [json.loads(line) for line in open(os.environ['COMMAND_LOG'])]\n"
         "        created = [c[c.index('--name')+1] for c in calls if '--name' in c]\n"
@@ -152,7 +158,7 @@ def fake_commands(tmp_path):
         "    elif '{{.Driver}}' in sys.argv:\n"
         "        print('bridge')\n"
         "    elif any('.Mounts' in a for a in sys.argv):\n"
-        "        print(os.environ.get('TEST_MOUNT_WRITABLE', 'false'))\n"
+        "        print(os.environ.get('TEST_MOUNTED', ''))\n"
         "    elif '{{.State.Running}}' in sys.argv:\n"
         "        print('true')\n"
         "    elif os.environ.get('TEST_DIFFERENT_IMAGES') and '{{.Image}}' in sys.argv:\n"
@@ -295,9 +301,9 @@ def test_stop_uses_timeout_and_preserves_volume(fake_commands):
     assert not any(args[0] in {"volume", "network"} for args in commands)
 
 
-def test_start_shares_artifacts_readonly_with_workers(fake_commands):
+def start_runs(fake_commands, **extra):
     env, calls = fake_commands
-    env.update(TEST_OWNED="1", TEST_START="1", TM_POSTGRES_PASSWORD="testonly")
+    env.update(TEST_OWNED="1", TEST_START="1", TM_POSTGRES_PASSWORD="testonly", **extra)
     result = subprocess.run(
         ["bash", str(ROOT / "scripts/start-cluster.sh")],
         env=env,
@@ -307,19 +313,82 @@ def test_start_shares_artifacts_readonly_with_workers(fake_commands):
     )
     assert result.returncode == 0, result.stderr
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
-    runs = {args[args.index("--name") + 1]: args for args in commands if args[0] == "run"}
+    return {args[args.index("--name") + 1]: args for args in commands if args[0] == "run"}
+
+
+def env_value(args, name):
+    values = [arg.split("=", 1)[1] for arg in args if arg.startswith(f"{name}=")]
+    return values[0] if values else None
+
+
+def test_start_gives_workers_download_access_without_shared_volume(fake_commands):
+    runs = start_runs(fake_commands)
+    token = env_value(runs["tm-coordinator"], "TM_INTERNAL_TOKEN")
+    assert token and len(token) >= 16
     for worker in ("tm-worker-1", "tm-worker-2"):
-        assert "source=tm-artifacts,target=/var/lib/tm/artifacts,readonly" in runs[worker]
+        assert not any("tm-artifacts" in arg for arg in runs[worker])
         assert not any("source=tm-state" in arg for arg in runs[worker])
-        assert not any("TM_DATABASE_URL=" in arg for arg in runs[worker])
+        assert env_value(runs[worker], "TM_DATABASE_URL") is None
+        assert env_value(runs[worker], "TM_ARTIFACT_URL") == "http://tm-coordinator:8000"
+        assert env_value(runs[worker], "TM_INTERNAL_TOKEN") == token
     assert "source=tm-artifacts,target=/var/lib/tm/artifacts" in runs["tm-coordinator"]
     assert not any("tm-artifacts" in arg for arg in runs["tm-head"])
+    assert env_value(runs["tm-head"], "TM_INTERNAL_TOKEN") is None
 
 
-@pytest.mark.parametrize("writable", ["false", "true"])
-def test_artifact_probe_requires_readonly_mount(fake_commands, writable):
+def test_start_generates_a_new_token_unless_exported(fake_commands, tmp_path):
+    first = env_value(start_runs(fake_commands)["tm-coordinator"], "TM_INTERNAL_TOKEN")
+    (tmp_path / "calls").unlink()
+    second = env_value(start_runs(fake_commands)["tm-coordinator"], "TM_INTERNAL_TOKEN")
+    assert first != second
+    (tmp_path / "calls").unlink()
+    fixed = start_runs(fake_commands, TM_INTERNAL_TOKEN="a" * 32)["tm-worker-1"]
+    assert env_value(fixed, "TM_INTERNAL_TOKEN") == "a" * 32
+
+
+def add_worker(fake_commands, name, **extra):
     env, calls = fake_commands
-    env.update(TEST_OWNED="1", TEST_MOUNT_WRITABLE=writable)
+    env.update(TEST_OWNED="1", TEST_MISSING="tm-worker-3", **extra)
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/add-worker.sh"), name],
+        env=env, capture_output=True, text=True, timeout=20,
+    )
+    commands = (
+        [json.loads(line)[1:] for line in calls.read_text().splitlines()] if calls.exists() else []
+    )
+    return result, [args for args in commands if args[0] == "run"]
+
+
+def test_add_worker_reuses_image_and_token_without_volume(fake_commands):
+    result, runs = add_worker(fake_commands, "tm-worker-3", TEST_TOKEN="b" * 32)
+    assert result.returncode == 0, result.stderr
+    (run,) = runs
+    assert run[run.index("--name") + 1] == "tm-worker-3"
+    assert run[-2:] == ["same-image", "ray-worker"]
+    assert env_value(run, "TM_ARTIFACT_URL") == "http://tm-coordinator:8000"
+    assert env_value(run, "TM_INTERNAL_TOKEN") == "b" * 32
+    assert env_value(run, "TM_DATABASE_URL") is None
+    assert not any("tm-artifacts" in arg for arg in run)
+
+
+@pytest.mark.parametrize(
+    "name,extra",
+    [
+        ("tm-head", {"TEST_TOKEN": "b" * 32}),          # nombre no válido
+        ("tm-worker-1", {"TEST_TOKEN": "b" * 32}),      # ya existe
+        ("tm-worker-3", {"TEST_TOKEN": ""}),            # coordinador sin token
+    ],
+)
+def test_add_worker_refuses_without_running(fake_commands, name, extra):
+    result, runs = add_worker(fake_commands, name, **extra)
+    assert result.returncode != 0
+    assert runs == []
+
+
+@pytest.mark.parametrize("mounted", ["", "yes"])
+def test_artifact_probe_requires_download_without_shared_volume(fake_commands, mounted):
+    env, calls = fake_commands
+    env.update(TEST_OWNED="1", TEST_MOUNTED=mounted)
     result = subprocess.run(
         ["bash", str(ROOT / "scripts/probe-artifact.sh"), "a" * 64],
         env=env,
@@ -328,7 +397,7 @@ def test_artifact_probe_requires_readonly_mount(fake_commands, writable):
     )
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
     checks = [args for args in commands if "verify-artifact" in args]
-    if writable == "false":
+    if not mounted:
         assert result.returncode == 0, result.stderr
         assert len(checks) == 2
         assert {args[1] for args in checks} == {"tm-worker-1", "tm-worker-2"}

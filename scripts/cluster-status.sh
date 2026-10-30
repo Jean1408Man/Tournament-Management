@@ -30,4 +30,4 @@ docker exec tm-coordinator python -c \
   'import socket; print({n: socket.gethostbyname(n) for n in ("tm-postgres", "tm-head", "tm-worker-1", "tm-worker-2")})'
 docker exec tm-coordinator tm migrate
 docker exec tm-coordinator tm doctor --backend ray --http-host 0.0.0.0
-printf 'Infraestructura comprobada. /ready debe dar 200 con PostgreSQL migrado y TM_BACKEND=local; Ray aún no ejecuta torneos.\n'
+printf 'Infraestructura comprobada. /ready debe dar 200 con PostgreSQL migrado; con TM_BACKEND=ray las partidas se ejecutan en los workers.\n'

@@ -37,3 +37,7 @@ class ExecutionBackend(Protocol):
     def workers(self) -> tuple[WorkerInfo, ...]:
         """Instantánea de identidades propias, no objetos del middleware."""
         ...
+
+    def worker_of(self, attempt_id: str) -> str:
+        """Identidad pública del worker asignado; vacío si aún no tiene uno."""
+        ...

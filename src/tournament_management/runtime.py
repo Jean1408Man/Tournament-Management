@@ -1,5 +1,6 @@
 """Composición: el único lugar que elige base de datos, almacén y backend de ejecución."""
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import fields
@@ -20,6 +21,8 @@ from tournament_management.tournaments.service import (
     PersistentTournamentService,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def check_storage(settings: Settings, *, create: bool = False) -> None:
     path = settings.data_path
@@ -32,6 +35,42 @@ def check_storage(settings: Settings, *, create: bool = False) -> None:
 
 @contextmanager
 def application_services(settings: Settings) -> Iterator[ApiServices | None]:
+    for message in settings.timing_warnings():
+        logger.warning(message)
+    connection = None
+    try:
+        if settings.backend == "ray":
+            # Una sola conexión por proceso: la abre la composición y la cede
+            # al backend, que no importa cluster/. Si falla, no se sirve HTTP.
+            from tournament_management.cluster.ray_connection import RayConnection
+
+            connection = RayConnection(settings.ray_address)
+            connection.connect()
+            logger.info("Conexión Ray Client establecida")
+        with _services(settings, connection) as services:
+            yield services
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def _backend(settings: Settings, store: FileArtifactStore, connection):
+    if connection is None:
+        return LocalExecution(
+            lambda attempt, cancel: run_registered_match(attempt, store, cancel=cancel),
+        )
+    from tournament_management.execution.backends.ray import RayExecution
+
+    # Los workers descargan los bots del coordinador (4.2): no reciben el almacén.
+    return RayExecution(
+        connection.snapshot,
+        cancel_grace_ms=settings.cancel_grace_ms,
+        suspect_cooldown_ms=settings.suspect_cooldown_ms,
+    )
+
+
+@contextmanager
+def _services(settings: Settings, connection) -> Iterator[ApiServices | None]:
     if not settings.database_url:
         yield None
         return
@@ -49,19 +88,18 @@ def application_services(settings: Settings) -> Iterator[ApiServices | None]:
         queries=TournamentQueries(work_factory),
         work_factory=work_factory,
         max_upload_bytes=settings.artifact_max_bytes,
+        artifacts=store,
+        internal_token=settings.internal_token,
     )
     try:
-        if settings.backend == "local":
-            services.backend = LocalExecution(
-                lambda attempt, cancel: run_registered_match(attempt, store, cancel=cancel),
-            )
-            policy = ExecutionPolicy(
-                **{field.name: getattr(settings, field.name) for field in fields(ExecutionPolicy)}
-            )
-            services.coordinator = TournamentCoordinator(
-                work_factory, services.backend, results, policy
-            )
-            services.coordinator.start()
+        services.backend = _backend(settings, store, connection)
+        policy = ExecutionPolicy(
+            **{field.name: getattr(settings, field.name) for field in fields(ExecutionPolicy)}
+        )
+        services.coordinator = TournamentCoordinator(
+            work_factory, services.backend, results, policy
+        )
+        services.coordinator.start()
         yield services
     finally:
         if services.coordinator:
@@ -82,8 +120,8 @@ def readiness(settings: Settings, services: ApiServices | None) -> dict:
             checks["database"] = "ready"
         except OSError:
             checks["database"] = "unavailable"
+    # Con Ray, listo significa conexión abierta y coordinador sano; la falta de
+    # workers no lo cambia y se observa en /api/v1/workers (D1.7).
     if services and services.coordinator and services.coordinator.healthy:
         checks["execution"] = "ready"
-    elif settings.backend == "ray":
-        checks["execution"] = "not_implemented"
     return checks
