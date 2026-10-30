@@ -127,58 +127,21 @@ sample_workers() {  # etiqueta → añade una muestra con hora a workers.log
 }
 
 dump() {  # torneo → guarda torneo, todas las partidas y el historial completo
-  "$PY" - "$API" "$1" "$RESULTS" <<'EOF'
-import json, sys, time, urllib.request
-api, tournament, out = sys.argv[1:]
-base = f"{api}/api/v1/tournaments/{tournament}"
-def get(url):
-    with urllib.request.urlopen(url, timeout=10) as r:
-        return json.load(r)
-def save(name, data):
-    with open(f"{out}/{tournament}.{name}.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=1)
-save("tournament", get(base))
-items, total = [], None
-while total is None or len(items) < total:  # la API sirve como mucho 100 por página
-    page = get(f"{base}/matches?offset={len(items)}&limit=100")
-    items, total = items + page["items"], page["total"]
-    if not page["items"]:
-        break
-save("matches", {"items": items, "total": total})
-# El servidor cierra el flujo cuando el torneo es terminal; si se corta antes,
-# se reanuda tras el último evento recibido. Lo que falte lo marca tm verify.
-events, closed, deadline = [], False, time.monotonic() + 60
-while not closed and time.monotonic() < deadline:
-    after = events[-1]["sequence"] if events else 0
-    try:
-        with urllib.request.urlopen(f"{base}/events?after={after}", timeout=10) as r:
-            for raw in r:
-                line = raw.decode()
-                if line.startswith("data:"):
-                    event = json.loads(line[5:])
-                    if "sequence" not in event:  # stream.error: la base falló a mitad
-                        raise ConnectionError(event)
-                    events.append(event)
-        closed = True
-    except OSError:
-        time.sleep(0.5)
-if not closed:
-    print(f"Aviso: el historial de {tournament} no llegó al final en 60 s", file=sys.stderr)
-save("events", events)
-EOF
+  "$PY" experiments/load/load.py dump "$API" "$1" "$RESULTS"
 }
 
 verify_evidence() {  # tm verify (5.2) sobre todo lo guardado; informe en verify.json
   local status
   set +e
-  PYTHONPATH=src PYTHONIOENCODING=utf-8 "$PY" -m tournament_management verify     --evidence "$RESULTS" > "$RESULTS/verify.json"
+  PYTHONPATH=src PYTHONIOENCODING=utf-8 "$PY" -m tournament_management verify \
+    --evidence "$RESULTS" > "$RESULTS/verify.json"
   status=$?
   set -e
   if ((status)); then
     log "FALLO tm verify: invariantes violados o evidencia incompleta (verify.json)"
     FAILURES=$((FAILURES + 1))
   else
-    log "OK    tm verify: sin violaciones de I1–I5 (verify.json)"
+    log "OK    tm verify: sin violaciones (verify.json; I6 solo con client.jsonl)"
   fi
 }
 
@@ -215,7 +178,20 @@ worker_state() {  # en marcha / detenido, para la evidencia
     docker container inspect --format '{{.State.Status}}' "$1"
   elif local_alive "$1"; then echo running; else echo exited; fi
 }
-worker_restore() {  # vuelve a arrancar el worker si no está en marcha y espera a verlo available
+ray_settled() {  # Ray lista exactamente un nodo vivo por worker en marcha
+  local expected
+  if [[ $MODE == docker ]]; then
+    expected=$(docker ps --filter "label=org.tournament-management.project=tournament-management" \
+      --format '{{.Names}}' | grep -c '^tm-worker-')
+    docker exec tm-head timeout --kill-after=2 30 python -m tournament_management.cluster.ray_topology \
+      --address ray://tm-head:10001 --expected-workers "$expected" >/dev/null 2>&1
+  else
+    expected=$(ls "$LOCAL_HOME/run"/tm-worker-*.pid 2>/dev/null | wc -l)
+    "$LOCAL_PY" -m tournament_management.cluster.ray_topology \
+      --address "ray://127.0.0.1:${TM_LOCAL_RAY_CLIENT_PORT:-10001}" --expected-workers "$expected" >/dev/null 2>&1
+  fi
+}
+worker_restore() {  # vuelve a arrancar el worker y espera a verlo available con Ray asentado
   local name="$1" deadline=$((SECONDS + 120))
   if [[ $MODE == docker ]]; then
     [[ "$(docker container inspect --format '{{.State.Running}}' "$name")" == true ]] ||
@@ -223,11 +199,14 @@ worker_restore() {  # vuelve a arrancar el worker si no está en marcha y espera
   else
     $LOCAL_CLUSTER restore "$name" >/dev/null
   fi
+  # available no basta: tras un reinicio Ray lista ~15 s el nodo viejo y el nuevo,
+  # y un intento enviado al viejo falla con TaskUnschedulableError (E1.14).
   while ((SECONDS < deadline)); do
-    curl -s "$API/api/v1/workers" | grep -q "\"worker_id\":\"$name\",\"status\":\"available\"" && return 0
+    curl -s "$API/api/v1/workers" | grep -q "\"worker_id\":\"$name\",\"status\":\"available\"" &&
+      ray_settled && return 0
     sleep 2
   done
-  log "Aviso: $name no volvió a available en 120 s"
+  log "Aviso: $name no volvió a available con un solo nodo Ray en 120 s"
 }
 head_kill() {
   if [[ $MODE == docker ]]; then docker kill --signal KILL tm-head >/dev/null; else $LOCAL_CLUSTER kill head >/dev/null; fi

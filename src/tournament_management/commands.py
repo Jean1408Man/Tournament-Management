@@ -14,17 +14,18 @@ from tournament_management.config import Settings
 
 
 def verify(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    from tournament_management.verification.evidence import load
+    from tournament_management.verification.evidence import load, load_client
     from tournament_management.verification.invariants import report
 
     folder = Path(args.evidence)
     try:
         evidence = load(folder)
+        client = load_client(folder)
     except (OSError, ValueError, KeyError) as exc:
         parser.error(f"Evidencia ilegible en {folder}: {exc}")
     if not evidence:
         parser.error(f"{folder} no contiene ningún <torneo>.tournament.json")
-    result = report(folder, evidence)
+    result = report(folder, evidence, client)
     print(json.dumps(result, indent=1, ensure_ascii=False))
     sys.exit(0 if result["ok"] else 1)
 

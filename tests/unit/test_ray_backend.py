@@ -286,6 +286,16 @@ def test_restarted_worker_is_available_again(ray, backend):
     assert status_of(backend, "tm-worker-1") is WorkerStatus.AVAILABLE
 
 
+def test_attempt_on_old_process_failing_after_restart_does_not_suspect_new_one(ray, backend):
+    backend.submit(attempt(1))
+    backend.nodes[2] = {**backend.nodes[2], "node_id": "n1-restarted"}
+    backend.workers()
+    ray.finish(0, WorkerCrashedError("TaskUnschedulableError"))
+    backend.poll()
+    backend.acknowledge("a1")
+    assert status_of(backend, "tm-worker-1") is WorkerStatus.AVAILABLE
+
+
 def test_our_own_cancellation_does_not_make_worker_suspected(ray, backend):
     backend.submit(attempt(1))
     backend.cancel("a1")

@@ -5,7 +5,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from tournament_management.competitors.artifact_store import ArtifactIntegrityError
-from tournament_management.shared.errors import ConflictError
+from tournament_management.shared.errors import ConflictError, OverloadedError
+
+RETRY_AFTER_SECONDS = 5
 
 
 class ApiError(Exception):
@@ -31,6 +33,12 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ConflictError)
     async def conflict(request: Request, exc: ConflictError):
         return error_response(409, "conflict", str(exc))
+
+    @app.exception_handler(OverloadedError)
+    async def overloaded(request: Request, exc: OverloadedError):
+        response = error_response(429, "overloaded", f"{exc}; vuelve a intentarlo más tarde")
+        response.headers["Retry-After"] = str(RETRY_AFTER_SECONDS)
+        return response
 
     @app.exception_handler(KeyError)
     async def missing(request: Request, exc: KeyError):

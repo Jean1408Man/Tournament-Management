@@ -7,6 +7,9 @@ from tournament_management.shared.messages import AttemptOutcome, MatchSpec
 from tournament_management.shared.states import MatchState, TournamentState, transition
 from tournament_management.tournaments.model import TournamentSpec, progress, rebuild
 
+# Clave arbitraria y fija del bloqueo consultivo de admisión (5.1).
+ADMISSION_LOCK = 510_001
+
 
 class _PostgresTournaments:
     def __init__(self, connection: Any) -> None:
@@ -66,6 +69,16 @@ class _PostgresTournaments:
                     (spec.tournament_id, competitor, artifact, position),
                 )
         self._schedule(spec, tournament)
+
+    def active_count(self) -> int:
+        """Torneos en curso; el bloqueo de transacción serializa las admisiones."""
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", (ADMISSION_LOCK,))
+            cursor.execute(
+                "SELECT count(*) AS count FROM tournaments WHERE state = %s",
+                (TournamentState.RUNNING.value,),
+            )
+            return cursor.fetchone()["count"]
 
     def get(self, tournament_id: str) -> dict:
         with self.connection.cursor() as cursor:

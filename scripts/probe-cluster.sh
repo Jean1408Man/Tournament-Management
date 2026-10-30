@@ -7,7 +7,7 @@ owned_container tm-coordinator
 # No usa exec -t: stdout contiene JSON y puede guardarse como evidencia.
 if docker exec tm-coordinator timeout --kill-after=5 120 \
   tm probe-cluster --ray-address ray://tm-head:10001 \
-  --expected-workers 2 --timeout-seconds 30; then
+  --expected-workers "$(cluster_workers | wc -l)" --timeout-seconds 30; then
   :
 else
   status=$?

@@ -296,7 +296,10 @@ def test_stop_uses_timeout_and_preserves_volume(fake_commands):
     assert result.returncode == 0, result.stderr
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
     stops = [args for args in commands if args[0] == "stop"]
-    assert len(stops) == 5
+    assert [args[-1] for args in stops] == [
+        "tm-coordinator", "tm-worker-4", "tm-worker-3", "tm-worker-2", "tm-worker-1",
+        "tm-head", "tm-postgres",
+    ]
     assert all(args[1:3] == ["--timeout", "20"] for args in stops)
     assert not any(args[0] in {"volume", "network"} for args in commands)
 
@@ -325,7 +328,10 @@ def test_start_gives_workers_download_access_without_shared_volume(fake_commands
     runs = start_runs(fake_commands)
     token = env_value(runs["tm-coordinator"], "TM_INTERNAL_TOKEN")
     assert token and len(token) >= 16
-    for worker in ("tm-worker-1", "tm-worker-2"):
+    workers = [name for name in runs if name.startswith("tm-worker-")]
+    assert workers == ["tm-worker-1", "tm-worker-2", "tm-worker-3", "tm-worker-4"]
+    for worker in workers:
+        assert runs[worker][runs[worker].index("--memory") + 1] == "2g"
         assert not any("tm-artifacts" in arg for arg in runs[worker])
         assert not any("source=tm-state" in arg for arg in runs[worker])
         assert env_value(runs[worker], "TM_DATABASE_URL") is None
@@ -334,6 +340,26 @@ def test_start_gives_workers_download_access_without_shared_volume(fake_commands
     assert "source=tm-artifacts,target=/var/lib/tm/artifacts" in runs["tm-coordinator"]
     assert not any("tm-artifacts" in arg for arg in runs["tm-head"])
     assert env_value(runs["tm-head"], "TM_INTERNAL_TOKEN") is None
+
+
+def test_worker_count_and_memory_are_configured_in_one_place(fake_commands):
+    runs = start_runs(fake_commands, TM_WORKERS="2", TM_WORKER_MEMORY="1536m")
+    workers = [name for name in runs if name.startswith("tm-worker-")]
+    assert workers == ["tm-worker-1", "tm-worker-2"]
+    assert all(runs[w][runs[w].index("--memory") + 1] == "1536m" for w in workers)
+    assert runs["tm-head"][runs["tm-head"].index("--memory") + 1] == "2g"
+
+
+@pytest.mark.parametrize("value", ["0", "dos", "-1"])
+def test_invalid_worker_count_is_rejected(fake_commands, value):
+    env, calls = fake_commands
+    env.update(TEST_OWNED="1", TM_POSTGRES_PASSWORD="testonly", TM_WORKERS=value)
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts/start-cluster.sh")], env=env, capture_output=True, text=True
+    )
+    assert result.returncode != 0
+    assert "TM_WORKERS" in result.stderr
+    assert not calls.exists()
 
 
 def test_start_generates_a_new_token_unless_exported(fake_commands, tmp_path):
@@ -399,8 +425,7 @@ def test_artifact_probe_requires_download_without_shared_volume(fake_commands, m
     checks = [args for args in commands if "verify-artifact" in args]
     if not mounted:
         assert result.returncode == 0, result.stderr
-        assert len(checks) == 2
-        assert {args[1] for args in checks} == {"tm-worker-1", "tm-worker-2"}
+        assert [args[1] for args in checks] == [f"tm-worker-{i}" for i in range(1, 5)]
     else:
         assert result.returncode != 0
         assert not checks

@@ -1,6 +1,6 @@
 # Arranque: con Docker o sin Docker
 
-Los dos modos ejecutan lo mismo: API, coordinador, Ray (un head y dos workers) y
+Los dos modos ejecutan lo mismo: API, coordinador, Ray (un head y `TM_WORKERS` workers, 4 por defecto) y
 PostgreSQL, con las partidas en los workers (`TM_BACKEND=ray`). Cambia dónde
 vive cada pieza:
 

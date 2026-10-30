@@ -16,6 +16,7 @@ class ExecutionPolicy:
     max_retries: int
     retry_delay_ms: int
     capacity_wait_ms: int = 300_000
+    max_running_attempts: int = 64
 
     def attempt(self, match: MatchSpec, generation: int) -> AttemptSpec:
         return AttemptSpec(

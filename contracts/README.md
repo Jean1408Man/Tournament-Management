@@ -1,6 +1,6 @@
 # Contrato HTTP v1 — etapas 3.3–3.4
 
-Contrato de máquina: [openapi-v1.json](openapi-v1.json), versión 1.0.0.
+Contrato de máquina: [openapi-v1.json](openapi-v1.json), versión 1.1.0 (1.1.0 añade la respuesta 429 de 5.1; ampliación compatible).
 La aplicación publica el mismo documento en `/api/v1/openapi.json` y su interfaz
 en `/docs`. Regenerar con `uv run python scripts/export-openapi.py` y verificar
 con `uv run pytest tests/unit/test_api_contract.py -q`. No requiere servidor ni BD.
@@ -96,6 +96,7 @@ subidos. Los detalles precisos de campos y tipos están en OpenAPI.
 | 413 | Archivo demasiado grande |
 | 415 | Tipo de contenido distinto de application/octet-stream |
 | 422 | Campos, tipos o código fuente inválidos |
+| 429 | `POST /tournaments` con `TM_MAX_ACTIVE_TOURNAMENTS` torneos en curso (code `overloaded`). Lleva `Retry-After` (s); no guarda nada ni consume la `Idempotency-Key`. Repetir la clave de un torneo ya admitido sigue dando 202 |
 | 503 | Base, artefacto o ejecución no disponibles |
 
 Usar un solo proceso coordinador activo por base. Desde 3.4 el arranque

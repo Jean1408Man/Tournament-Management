@@ -3,7 +3,8 @@ set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 require_docker
 image_id=""
-for name in "${TM_CONTAINERS[@]}"; do
+mapfile -t workers < <(cluster_workers)
+for name in tm-postgres tm-head "${workers[@]}" tm-coordinator; do
   owned_container "$name"
   current="$(docker container inspect --format '{{.Image}}' "$name")"
   if [[ "$name" != tm-postgres ]]; then
@@ -18,7 +19,8 @@ done
 printf 'Comprobando membresía mediante Ray Client (máximo 30 s)...\n'
 # El plazo vive dentro del contenedor: no dejar Python huérfano al matar docker exec.
 if docker exec tm-coordinator timeout --kill-after=2 30 python -m \
-  tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2; then
+  tournament_management.cluster.ray_topology --address ray://tm-head:10001 \
+  --expected-workers "${#workers[@]}"; then
   :
 else
   status=$?
@@ -27,7 +29,8 @@ else
   exit "$status"
 fi
 docker exec tm-coordinator python -c \
-  'import socket; print({n: socket.gethostbyname(n) for n in ("tm-postgres", "tm-head", "tm-worker-1", "tm-worker-2")})'
+  'import socket, sys; print({n: socket.gethostbyname(n) for n in sys.argv[1:]})' \
+  tm-postgres tm-head "${workers[@]}"
 docker exec tm-coordinator tm migrate
 docker exec tm-coordinator tm doctor --backend ray --http-host 0.0.0.0
 printf 'Infraestructura comprobada. /ready debe dar 200 con PostgreSQL migrado; con TM_BACKEND=ray las partidas se ejecutan en los workers.\n'

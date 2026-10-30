@@ -7,10 +7,12 @@ Ejecutar con bash desde cualquier directorio:
 - cluster-status.sh: imagen común, membresía, DNS y almacenamiento.
 - probe-cluster.sh: tarea fijada a cada worker; comprueba identidad y versiones,
   con plazo global de 120 segundos. Requiere reconstruir la imagen del paso 1.6.
-- probe-artifact.sh SHA256: comprueba el objeto en ambos workers y exige montaje de solo lectura.
+- probe-artifact.sh SHA256: comprueba la descarga del objeto en cada worker.
+- add-worker.sh tm-worker-N: añade un worker con el clúster en marcha.
 - stop-cluster.sh: retira contenedores etiquetados del proyecto; conserva volumen/red.
-- fail-worker.sh tm-worker-1: simula caída de un worker específico.
-- common.sh: funciones compartidas; no se ejecuta por separado.
+- fail-worker.sh tm-worker-N: simula caída de un worker específico.
+- common.sh: funciones compartidas; no se ejecuta por separado. Genera los
+  nombres tm-worker-1..N a partir de `TM_WORKERS` (4) y aplica `TM_WORKER_MEMORY`.
 
 No contienen lógica de torneos. Ver ../deploy/OPERATIONS.md.
 

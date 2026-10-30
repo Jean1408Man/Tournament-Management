@@ -81,7 +81,9 @@ def _services(settings: Settings, connection) -> Iterator[ApiServices | None]:
     store = FileArtifactStore(
         settings.data_path / "artifacts", max_bytes=settings.artifact_max_bytes
     )
-    results = PersistentTournamentService(work_factory)
+    results = PersistentTournamentService(
+        work_factory, max_active_tournaments=settings.max_active_tournaments
+    )
     services = ApiServices(
         competitors=CompetitorService(work_factory, store, max_bytes=settings.artifact_max_bytes),
         tournaments=results,

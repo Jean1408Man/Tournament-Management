@@ -20,12 +20,16 @@ hacer la primera construcción si se necesita reproducción binaria exacta.
 |---|---|---|---|
 | tm-postgres | Persistencia PostgreSQL | Sin límite adicional | No aplica |
 | tm-head | Control y servidor Ray Client | 1 CPU, 2 GiB RAM, 512 MiB shm | CPU=0, GPU=0 |
-| tm-worker-1 | Ejecución | 1 CPU, 2 GiB RAM, 512 MiB shm | CPU=1, GPU=0, tm_worker=1 |
-| tm-worker-2 | Ejecución | 1 CPU, 2 GiB RAM, 512 MiB shm | CPU=1, GPU=0, tm_worker=1 |
+| tm-worker-1 … tm-worker-N | Ejecución, una partida a la vez | 1 CPU, `TM_WORKER_MEMORY` (2 GiB) RAM, 512 MiB shm | CPU=1, GPU=0, tm_worker=1 |
 | tm-coordinator | API y driver Ray Client | 1 CPU, 1 GiB RAM | No registra nodo de ejecución |
 
-Son límites, no reservas físicas. Presupuesto orientativo: 4 CPU y al menos
-8 GiB para Docker, con margen adicional para el sistema operativo. Cada nodo
+N = `TM_WORKERS` (4 por defecto, etapa 5.1), en `.env` o en el entorno. Para
+añadir uno con el clúster en marcha: `bash scripts/add-worker.sh tm-worker-N`;
+`stop-cluster.sh` retira también los añadidos.
+
+Son límites, no reservas físicas. Presupuesto orientativo con 4 workers: 6 CPU
+y al menos 8 GiB para Docker; medir con `docker stats` y bajar
+`TM_WORKER_MEMORY` si no caben. Cada nodo
 Ray usa 256 MiB de object store. Los valores están en start-cluster.sh.
 El coordinador conserva su estado local en tm-state y PostgreSQL sus datos en
 tm-postgres-data. Los ejecutables se guardan en tm-artifacts, que solo monta el
@@ -150,7 +154,7 @@ bash scripts/start-cluster.sh
 docker exec tm-coordinator python -c 'from pathlib import Path; assert Path("/var/lib/tm/step15-check.txt").read_text() == "persistencia-ok"; print("Persistencia verificada")'
 ```
 
-stop-cluster.sh detiene y elimina los cinco contenedores del proyecto, tras
+stop-cluster.sh detiene y elimina los contenedores del proyecto, tras
 validar sus etiquetas. Conserva tm-state, tm-postgres-data, tm-artifacts y tm-net. Se pierden los
 archivos temporales de los contenedores y sus logs locales Docker al eliminarlos;
 guardar evidencia antes de parar. El volumen permite recuperar el estado.
@@ -183,6 +187,7 @@ docker volume create --label org.tournament-management.project=tournament-manage
 TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 docker run -d --pull never --init --name tm-worker-1 --hostname tm-worker-1 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --env TM_ARTIFACT_URL=http://tm-coordinator:8000 --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 ray-worker
 docker run -d --pull never --init --name tm-worker-2 --hostname tm-worker-2 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --env TM_ARTIFACT_URL=http://tm-coordinator:8000 --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 ray-worker
+# … un docker run por worker, hasta tm-worker-N (TM_WORKERS)
 docker exec tm-head python -m tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2
 docker run -d --pull never --init --name tm-coordinator --hostname tm-coordinator --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 1g -p 127.0.0.1:8000:8000 --mount source=tm-state,target=/var/lib/tm --mount source=tm-artifacts,target=/var/lib/tm/artifacts --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 coordinator
 ```
@@ -351,7 +356,7 @@ Procedimiento de recuperación (conserva PostgreSQL y artefactos):
 
 ```bash
 docker start tm-head
-docker restart tm-worker-1 tm-worker-2
+docker restart $(docker ps -aq --filter name=tm-worker-)
 docker restart tm-coordinator
 curl -i http://127.0.0.1:8000/ready
 ```

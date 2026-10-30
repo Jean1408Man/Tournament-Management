@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 [[ $# == 1 && "$1" =~ ^[0-9a-f]{64}$ ]] || die "Uso: bash scripts/probe-artifact.sh SHA256"
 require_docker
-for name in tm-worker-1 tm-worker-2; do
+for name in $(cluster_workers); do
   owned_container "$name"
   mounted="$(docker container inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/tm/artifacts"}}yes{{end}}{{end}}' "$name")"
   [[ -z "$mounted" ]] || die "$name no debe montar tm-artifacts: debe descargar del coordinador."

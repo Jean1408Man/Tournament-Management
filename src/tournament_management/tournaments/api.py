@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
 
-from tournament_management.api.common import Identifier
+from tournament_management.api.common import ErrorResponse, Identifier
 from tournament_management.api.dependencies import ExecutionServices, IdempotencyKey, Services
 from tournament_management.tournaments.schemas import (
     CancellationResponse,
@@ -17,7 +17,24 @@ from tournament_management.tournaments.schemas import (
 router = APIRouter(prefix="/tournaments", tags=["tournaments"])
 
 
-@router.post("", status_code=202, response_model=TournamentAccepted)
+@router.post(
+    "",
+    status_code=202,
+    response_model=TournamentAccepted,
+    responses={
+        429: {
+            "model": ErrorResponse,
+            "description": "Límite de torneos activos alcanzado (code overloaded); no se guardó "
+            "nada y la Idempotency-Key no se consumió",
+            "headers": {
+                "Retry-After": {
+                    "description": "Segundos de espera sugeridos",
+                    "schema": {"type": "integer"},
+                }
+            },
+        }
+    },
+)
 def create(
     data: TournamentCreate,
     response: Response,

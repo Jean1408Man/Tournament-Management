@@ -137,7 +137,7 @@ bash scripts/cluster-status.sh
 
 El primer comando descarga la imagen de PostgreSQL y el segundo lo necesario
 para la aplicación. Los otros exigen las imágenes locales y no hacen pull. Se
-crean PostgreSQL, head, dos workers y coordinador en tm-net. Solo la API se
+crean PostgreSQL, head, `TM_WORKERS` workers (4 por defecto) y coordinador en tm-net. Solo la API se
 publica en localhost:8000. El coordinador monta el volumen tm-state y
 PostgreSQL conserva sus datos en tm-postgres-data. Los bots se conservan en
 tm-artifacts, con escritura para el coordinador y solo lectura para los workers. Define

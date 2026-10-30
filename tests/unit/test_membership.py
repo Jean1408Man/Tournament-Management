@@ -35,7 +35,7 @@ def test_new_workers_are_available_and_sorted(membership):
 
 
 def test_infrastructure_failure_makes_worker_suspected_until_cooldown(membership, clock):
-    membership.suspect("tm-worker-1")
+    membership.suspect("tm-worker-1", "n1")
     assert membership.status("tm-worker-1") is SUSPECTED
     clock.now += 44.9
     membership.observe([("tm-worker-1", "n1", 1), ("tm-worker-2", "n2", 1)])
@@ -46,17 +46,24 @@ def test_infrastructure_failure_makes_worker_suspected_until_cooldown(membership
 
 
 def test_missing_worker_is_lost_even_if_suspected(membership):
-    membership.suspect("tm-worker-1")
+    membership.suspect("tm-worker-1", "n1")
     membership.observe([("tm-worker-2", "n2", 1)])
     assert membership.status("tm-worker-1") is LOST
     assert "tm-worker-1" in membership.names()
 
 
 def test_restart_with_new_identity_clears_suspicion(membership):
-    membership.suspect("tm-worker-1")
+    membership.suspect("tm-worker-1", "n1")
     membership.observe([("tm-worker-1", "n1-restarted", 1), ("tm-worker-2", "n2", 1)])
     assert membership.status("tm-worker-1") is AVAILABLE
     assert membership.node_id("tm-worker-1") == "n1-restarted"
+
+
+def test_failure_of_old_identity_does_not_suspect_restarted_worker(membership):
+    # Docker 5.1 (E1.14): el intento fue al proceso viejo y falló tras el reinicio.
+    membership.observe([("tm-worker-1", "n1-restarted", 1), ("tm-worker-2", "n2", 1)])
+    membership.suspect("tm-worker-1", "n1")
+    assert membership.status("tm-worker-1") is AVAILABLE
 
 
 def test_lost_worker_that_returns_is_available(membership):
@@ -67,8 +74,8 @@ def test_lost_worker_that_returns_is_available(membership):
 
 def test_lost_or_unknown_worker_cannot_be_suspected(membership):
     membership.observe([("tm-worker-2", "n2", 1)])
-    membership.suspect("tm-worker-1")
-    membership.suspect("tm-worker-9")
+    membership.suspect("tm-worker-1", "n1")
+    membership.suspect("tm-worker-9", "n9")
     membership.observe([("tm-worker-1", "n1", 1), ("tm-worker-2", "n2", 1)])
     assert membership.status("tm-worker-1") is AVAILABLE
     assert "tm-worker-9" not in membership.names()

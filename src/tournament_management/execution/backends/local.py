@@ -79,10 +79,11 @@ class LocalExecution:
 
     def workers(self) -> tuple[WorkerInfo, ...]:
         with self._lock:
-            running = sum(future.running() for _, future, _ in self._attempts.values())
+            # Un intento en cola ocupa hueco igual que uno en marcha: no sobreenviar.
+            busy = sum(not future.done() for _, future, _ in self._attempts.values())
             return (WorkerInfo(
                 worker_id="local", status=WorkerStatus.AVAILABLE,
-                capacity=self._capacity, running_attempts=running,
+                capacity=self._capacity, running_attempts=min(busy, self._capacity),
             ),)
 
     def worker_of(self, attempt_id: str) -> str:

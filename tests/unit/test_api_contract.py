@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_versioned_openapi_matches_application():
     contract = json.loads((ROOT / "contracts" / "openapi-v1.json").read_text())
     assert contract == create_app(Settings()).openapi()
-    assert contract["info"]["version"] == "1.0.0"
+    assert contract["info"]["version"] == "1.1.0"
+    overload = contract["paths"]["/api/v1/tournaments"]["post"]["responses"]["429"]
+    assert "Retry-After" in overload["headers"]
     upload = contract["paths"]["/api/v1/competitors"]["post"]
     assert (
         upload["requestBody"]["content"]["application/octet-stream"]["schema"]["format"] == "binary"

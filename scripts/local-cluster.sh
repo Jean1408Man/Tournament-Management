@@ -15,7 +15,7 @@ LOCAL_HOME="${TM_LOCAL_HOME:-$HOME/.local/share/tournament-management}"
 RUN="$LOCAL_HOME/run" LOGS="$LOCAL_HOME/logs" PGDATA_DIR="$LOCAL_HOME/postgres"
 VENV="${TM_VENV:-$PROJECT_DIR/.venv}"
 API_PORT="${TM_API_PORT:-8000}" CLIENT_PORT="${TM_LOCAL_RAY_CLIENT_PORT:-10001}"
-PG_PORT="${TM_LOCAL_PG_PORT:-5433}" WORKERS="${TM_LOCAL_WORKERS:-2}"
+PG_PORT="${TM_LOCAL_PG_PORT:-5433}" WORKERS="${TM_LOCAL_WORKERS:-${TM_WORKERS:-4}}"
 DB_URL="postgresql:///tournament_management?host=$RUN&port=$PG_PORT&user=tm"
 API="http://127.0.0.1:$API_PORT"
 # Misma mitigación gRPC que el despliegue Docker (decisión 1.15).

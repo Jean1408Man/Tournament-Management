@@ -10,7 +10,7 @@ if [[ -f "$TM_ENV_FILE" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ -z "$line" || "$line" == \#* ]] && continue
-    if [[ "$line" =~ ^(TM_IMAGE|TM_POSTGRES_IMAGE|TM_POSTGRES_PASSWORD|TM_API_PORT|TM_START_TIMEOUT|TM_ARTIFACT_MAX_BYTES|TM_BACKEND)=(.*)$ ]]; then
+    if [[ "$line" =~ ^(TM_IMAGE|TM_POSTGRES_IMAGE|TM_POSTGRES_PASSWORD|TM_API_PORT|TM_START_TIMEOUT|TM_ARTIFACT_MAX_BYTES|TM_BACKEND|TM_WORKERS|TM_WORKER_MEMORY|TM_MAX_RUNNING_ATTEMPTS|TM_MAX_ACTIVE_TOURNAMENTS)=(.*)$ ]]; then
       key="${BASH_REMATCH[1]}"
       value="${BASH_REMATCH[2]}"
       if [[ ! -v "$key" ]]; then
@@ -23,7 +23,16 @@ fi
 TM_IMAGE="${TM_IMAGE:-tournament-management:step-1.5}"
 TM_LABEL_KEY="org.tournament-management.project"
 TM_LABEL_VALUE="tournament-management"
-TM_CONTAINERS=(tm-postgres tm-head tm-worker-1 tm-worker-2 tm-coordinator)
+# Número de workers (5.1, E1.12): un único valor genera tm-worker-1..N.
+TM_WORKERS="${TM_WORKERS:-4}"
+TM_WORKER_MEMORY="${TM_WORKER_MEMORY:-2g}"
+if [[ ! "$TM_WORKERS" =~ ^[1-9][0-9]*$ || ! "$TM_WORKER_MEMORY" =~ ^[1-9][0-9]*[kmgKMG]?$ ]]; then
+  printf 'TM_WORKERS debe ser un entero positivo y TM_WORKER_MEMORY un tamaño (2g, 1536m).\n' >&2
+  exit 1
+fi
+TM_WORKER_NAMES=()
+for ((i = 1; i <= TM_WORKERS; i++)); do TM_WORKER_NAMES+=("tm-worker-$i"); done
+TM_CONTAINERS=(tm-postgres tm-head "${TM_WORKER_NAMES[@]}" tm-coordinator)
 TM_POSTGRES_IMAGE="${TM_POSTGRES_IMAGE:-postgres:16.6-bookworm}"
 TM_POSTGRES_PASSWORD="${TM_POSTGRES_PASSWORD:-}"
 TM_START_TIMEOUT="${TM_START_TIMEOUT:-180}"
@@ -34,6 +43,9 @@ TM_RUN_BASE=(--detach --pull never --init --network tm-net --label "$TM_LABEL_KE
              --env GRPC_POLL_STRATEGY=poll --env GRPC_ENABLE_FORK_SUPPORT=true
              --env "TM_ARTIFACT_MAX_BYTES=$TM_ARTIFACT_MAX_BYTES")
 TM_RAY_LIMITS=(--cpus 1 --memory 2g --shm-size 512m --ulimit nofile=65536:65536)
+# Un hueco por worker (E1.5): una CPU por partida para que los plazos sean justos.
+TM_WORKER_LIMITS=(--cpus 1 --memory "$TM_WORKER_MEMORY" --shm-size 512m
+                  --ulimit nofile=65536:65536)
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
@@ -41,10 +53,19 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 # coordinador con el token (4.2). Lo usan start-cluster.sh y add-worker.sh.
 start_worker() {
   local name="$1" image="$2" token="$3"
-  docker run "${TM_RUN_BASE[@]}" "${TM_RAY_LIMITS[@]}" --name "$name" --hostname "$name" \
+  docker run "${TM_RUN_BASE[@]}" "${TM_WORKER_LIMITS[@]}" --name "$name" --hostname "$name" \
     --env TM_ARTIFACT_URL=http://tm-coordinator:8000 \
     --env "TM_INTERNAL_TOKEN=$token" \
     "$image" ray-worker
+}
+
+# Workers configurados más los añadidos con add-worker.sh, en orden numérico.
+cluster_workers() {
+  {
+    printf '%s\n' "${TM_WORKER_NAMES[@]}"
+    docker ps -a --filter "label=$TM_LABEL_KEY=$TM_LABEL_VALUE" --format '{{.Names}}' |
+      grep -E '^tm-worker-[0-9]+$' || true
+  } | sort -u -t- -k3,3n
 }
 
 require_docker() {

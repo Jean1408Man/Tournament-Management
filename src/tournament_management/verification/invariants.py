@@ -1,4 +1,4 @@
-"""Invariantes I1–I5 sobre la evidencia de un torneo (5.2).
+"""Invariantes I1–I6 sobre la evidencia de un torneo (5.2; I6 en 5.1).
 
 Detecta violaciones en las ejecuciones observadas; no demuestra que no existan.
 El orden es la sequence de cada torneo: se asigna con el torneo bloqueado hasta
@@ -10,7 +10,8 @@ tournament.blocked y tournament.cancelled.
 
 I2 repite el torneo con los formatos del servidor; un error compartido en ellos
 pasaría inadvertido, por eso se añaden propiedades independientes (E2.8 c).
-I6 (lo que vio el cliente) llega con el generador de carga de 5.1 (E2.7 c).
+I6 (lo que vio el cliente) solo se comprueba si hay client.jsonl (generador de
+carga de 5.1, E2.7 c); sin él figura en not_checked.
 """
 
 from collections import Counter
@@ -26,7 +27,18 @@ ACCEPTABLE = {"completed", "bot_failure"}
 CLOSED = {"attempt.failed", "attempt.lost", "attempt.invalidated"}
 
 
-def report(folder: Path, evidence: list[TournamentEvidence]) -> dict:
+def report(
+    folder: Path,
+    evidence: list[TournamentEvidence],
+    client: dict[str, list[dict]] | None = None,
+) -> dict:
+    present = {item.tournament["tournament_id"] for item in evidence}
+    # I6: un 202 recibido es una promesa de que el torneo existe.
+    orphans = [
+        violation("I6", f"202 recibido para {tournament_id} sin evidencia del torneo")
+        for tournament_id, records in sorted((client or {}).items())
+        if tournament_id not in present and any(r["kind"] == "created" for r in records)
+    ]
     tournaments = [
         {
             "tournament_id": item.tournament["tournament_id"],
@@ -37,9 +49,10 @@ def report(folder: Path, evidence: list[TournamentEvidence]) -> dict:
     ]
     return {
         "evidence": str(folder),
-        "ok": not any(t["violations"] for t in tournaments),
-        "checked": list(CHECKED),
-        "not_checked": list(NOT_CHECKED),
+        "ok": not orphans and not any(t["violations"] for t in tournaments),
+        "checked": list(CHECKED) + (["I6"] if client is not None else []),
+        "not_checked": list(NOT_CHECKED) if client is None else [],
+        "violations": orphans,
         "tournaments": tournaments,
     }
 
@@ -52,6 +65,7 @@ def verify(evidence: TournamentEvidence) -> list[dict]:
         *current_attempt(evidence),
         *cancellation(evidence),
         *no_infrastructure_defeats(evidence),
+        *client_durability(evidence),
     ]
 
 
@@ -241,4 +255,28 @@ def no_infrastructure_defeats(evidence: TournamentEvidence) -> list[dict]:
         if kind not in ACCEPTABLE:
             detail = f"resultado aceptado de tipo {kind}"
             found.append(violation("I5", detail, match["match_id"], accepted))
+    return found
+
+
+def client_durability(evidence: TournamentEvidence) -> list[dict]:
+    """I6: lo que el cliente recibió en vivo sigue en el historial final, idéntico,
+    en el mismo orden y sin huecos. Las repeticiones (entrega al menos una vez)
+    se admiten si son idénticas."""
+    final = {e["event_id"]: e for e in evidence.events}
+    found, last = [], 0
+    for record in evidence.client or []:
+        if record["kind"] != "event":
+            continue
+        seen = record["event"]
+        ids = (seen.get("match_id", ""), seen.get("attempt_id", ""))
+        stored = final.get(seen["event_id"])
+        if stored is None:
+            detail = f"evento {seen['sequence']} visto por el cliente y ausente del historial"
+            found.append(violation("I6", detail, *ids))
+        elif stored != seen:
+            found.append(violation("I6", f"evento {seen['sequence']} distinto del historial", *ids))
+        if seen["sequence"] > last + 1:
+            detail = f"el cliente recibió {seen['sequence']} tras {last}: hueco o desorden"
+            found.append(violation("I6", detail, *ids))
+        last = max(last, seen["sequence"])
     return found

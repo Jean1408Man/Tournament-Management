@@ -39,7 +39,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     app = FastAPI(
         title="Tournament Management API",
-        version="1.0.0",
+        version="1.1.0",
         lifespan=lifespan,
         openapi_url="/api/v1/openapi.json",
     )

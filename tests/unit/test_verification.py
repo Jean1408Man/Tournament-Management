@@ -184,3 +184,49 @@ def test_tm_verify_reads_a_folder_and_fails_on_violations(tmp_path, monkeypatch,
     code, result = run()
     assert (code, result["ok"]) == (1, False)
     assert result["tournaments"][0]["violations"][0]["invariant"] == "I5"
+
+
+def seen(evidence: TournamentEvidence, events: list[dict] | None = None) -> list[dict]:
+    """Registro del cliente: el 202 y cada evento tal como lo recibió."""
+    received = evidence.events if events is None else events
+    return [{"kind": "created", "tournament_id": TID}] + [
+        {"kind": "event", "tournament_id": TID, "event": dict(e)} for e in received
+    ]
+
+
+def test_i6_client_view_matches_final_history() -> None:
+    evidence = history("round_robin", ("a", "b", "c"))
+    # Una repetición idéntica (entrega al menos una vez) no es violación.
+    events = evidence.events
+    evidence.client = seen(evidence, [*events[:3], events[2], *events[3:]])
+    assert verify(evidence) == []
+
+
+def test_i6_event_seen_by_client_and_lost() -> None:
+    evidence = history("round_robin", ("a", "b", "c"))
+    evidence.client = seen(evidence)
+    lost = evidence.events.pop()
+    details = {v["detail"] for v in verify(evidence) if v["invariant"] == "I6"}
+    assert f"evento {lost['sequence']} visto por el cliente y ausente del historial" in details
+
+
+def test_i6_changed_content_and_gap() -> None:
+    evidence = history("round_robin", ("a", "b", "c"))
+    received = [dict(e) for e in evidence.events]
+    received[1]["detail"] = "otra cosa"
+    del received[2]
+    evidence.client = seen(evidence, received)
+    details = {v["detail"] for v in verify(evidence) if v["invariant"] == "I6"}
+    assert "evento 2 distinto del historial" in details
+    assert "el cliente recibió 4 tras 2: hueco o desorden" in details
+
+
+def test_i6_accepted_tournament_without_evidence(tmp_path) -> None:
+    from tournament_management.verification.invariants import report
+
+    evidence = history("elimination", ("a", "b"))
+    client = {TID: seen(evidence), "ghost": [{"kind": "created", "tournament_id": "ghost"}]}
+    result = report(tmp_path, [evidence], client)
+    assert result["ok"] is False
+    assert result["checked"][-1] == "I6" and result["not_checked"] == []
+    assert result["violations"][0]["detail"] == "202 recibido para ghost sin evidencia del torneo"

@@ -65,16 +65,22 @@ docker run "${base[@]}" "${ray_limits[@]}" --name tm-head --hostname tm-head \
 wait_for "control de Ray" docker exec tm-head timeout --kill-after=2 12 \
   ray health-check --address=127.0.0.1:6379
 
-for name in tm-worker-1 tm-worker-2; do
+for name in "${TM_WORKER_NAMES[@]}"; do
   start_worker "$name" "$image_id" "$TM_INTERNAL_TOKEN"
 done
 # Cada conexión Ray Client arranca un proceso propio en el head; con el equipo
 # cargado tarda varios segundos, así que el intento tiene plazo propio de 30 s.
-TM_TRY_TIMEOUT=35 wait_for "dos workers registrados" docker exec tm-head \
+TM_TRY_TIMEOUT=35 wait_for "$TM_WORKERS workers registrados" docker exec tm-head \
   timeout --kill-after=2 30 python -m \
-  tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2
+  tournament_management.cluster.ray_topology --address ray://tm-head:10001 \
+  --expected-workers "$TM_WORKERS"
 
-docker run "${base[@]}" --name tm-coordinator --hostname tm-coordinator \
+# Límites de carga de 5.1: solo se pasan si se definen (si no, los de la aplicación).
+limits=()
+for key in TM_MAX_RUNNING_ATTEMPTS TM_MAX_ACTIVE_TOURNAMENTS; do
+  if [[ -n "${!key:-}" ]]; then limits+=(--env "$key=${!key}"); fi
+done
+docker run "${base[@]}" "${limits[@]}" --name tm-coordinator --hostname tm-coordinator \
   --cpus 1 --memory 1g --publish "127.0.0.1:${TM_API_PORT:-8000}:8000" \
   --mount source=tm-state,target=/var/lib/tm \
   --mount source=tm-artifacts,target=/var/lib/tm/artifacts \

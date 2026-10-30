@@ -4,14 +4,10 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 require_docker
 # Validar todos los objetivos antes de detener cualquiera.
 targets=()
-# Workers añadidos con add-worker.sh (4.3): con un token viejo se reconectarían
-# al head del próximo arranque, así que se retiran también.
-extra=()
-while IFS= read -r name; do
-  [[ "$name" =~ ^tm-worker-[0-9]+$ && "$name" != tm-worker-1 && "$name" != tm-worker-2 ]] &&
-    extra+=("$name")
-done < <(docker ps -a --filter "label=$TM_LABEL_KEY=$TM_LABEL_VALUE" --format '{{.Names}}')
-for name in tm-coordinator "${extra[@]}" tm-worker-2 tm-worker-1 tm-head tm-postgres; do
+# También los añadidos con add-worker.sh (4.3): con un token viejo se
+# reconectarían al head del próximo arranque.
+mapfile -t workers < <(cluster_workers | sort -t- -k3,3nr)
+for name in tm-coordinator "${workers[@]}" tm-head tm-postgres; do
   if docker container inspect "$name" >/dev/null 2>&1; then
     owned_container "$name"
     targets+=("$name")

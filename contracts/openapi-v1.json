@@ -720,7 +720,7 @@
   },
   "info": {
     "title": "Tournament Management API",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1084,6 +1084,24 @@
               }
             },
             "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Límite de torneos activos alcanzado (code overloaded); no se guardó nada y la Idempotency-Key no se consumió",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos de espera sugeridos",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
