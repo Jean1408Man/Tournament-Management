@@ -20,3 +20,10 @@ class Limits:
             raise ValueError("Los límites deben ser positivos")
         if self.turn_timeout_ms > self.match_timeout_ms:
             raise ValueError("El límite de turno no puede superar el de partida")
+
+    @property
+    def stall_threshold_ms(self) -> int:
+        """Salto entre dos vueltas del árbitro a partir del cual se le considera
+        congelado (4.4, D4.8): la mitad del turno, nunca menos de 250 ms. Cada vuelta
+        espera ≤ 50 ms, así que un bot lento nunca produce saltos de ese tamaño."""
+        return max(250, self.turn_timeout_ms // 2)

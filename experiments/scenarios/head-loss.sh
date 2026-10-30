@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Escenario head-loss (salida de la etapa 4: "la pérdida del head puede
 # interrumpir todo el clúster; documentar su recuperación"). Con una partida
-# lenta en curso se mata tm-head. Se observa durante TM_OBSERVE_SECONDS (90 s)
+# lenta en curso se mata el head (tm-head en Docker, su proceso en modo local). Se observa durante TM_OBSERVE_SECONDS (90 s)
 # /ready, /workers, el torneo y el estado de los contenedores; después se aplica
 # el procedimiento de recuperación de deploy/OPERATIONS.md. Se exige solo lo
 # que es garantía: tras recuperar, el torneo termina con un resultado por partida.
@@ -15,26 +15,21 @@ create "$tournament" elimination slow-1 slow-2
 event=$(wait_event "$tournament" attempt.dispatched 60)
 [[ -n "$event" ]] || { log "No llegó attempt.dispatched"; exit 1; }
 sleep 3
-docker kill --signal KILL tm-head >/dev/null
-log "Matado tm-head con el intento $(field "$event" attempt_id) en curso"
+head_kill
+log "Matado el head con el intento $(field "$event" attempt_id) en curso"
 start=$SECONDS
 while ((SECONDS - start < observe)); do
   printf '+%3d s ready=%s torneo=%s contenedores=%s\n' "$((SECONDS - start))" \
     "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$API/ready")" \
     "$(state "$tournament" 2>/dev/null || echo '?')" \
-    "$(docker ps -a --filter name=tm- --format '{{.Names}}:{{.State}}' | sort | tr '\n' ' ')" \
+    "$(cluster_line)" \
     | tee -a "$RESULTS/observacion.log"
   sample_workers sin-head
   sleep 5
 done
-docker logs --tail 60 tm-coordinator > "$RESULTS/coordinator.log" 2>&1
+coordinator_logs > "$RESULTS/coordinator.log"
 log "Recuperación: arrancar head, workers y reiniciar coordinador (deploy/OPERATIONS.md)"
-docker start tm-head >/dev/null
-for name in $(docker ps -a --filter "label=org.tournament-management.project=tournament-management" \
-    --format '{{.Names}}' | grep '^tm-worker-'); do
-  docker restart "$name" >/dev/null
-done
-docker restart tm-coordinator >/dev/null
+cluster_recover
 for _ in $(seq 1 90); do
   [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$API/ready")" == 200 ]] && break
   sleep 2

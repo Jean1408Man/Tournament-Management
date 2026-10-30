@@ -362,3 +362,25 @@ generación nueva. En la prueba, el torneo terminó `completed` con un único
 resultado aceptado, unos 90 s después de empezar la recuperación. Si se
 añadieron workers con `add-worker.sh`, reiniciarlos también. Recrear todo con
 `stop-cluster.sh` + `start-cluster.sh` es equivalente.
+
+## Modo sin Docker (etapa 4.4)
+
+Arranque paso a paso en [ARRANQUE.md](ARRANQUE.md). Detalles de operación:
+
+- `scripts/local-cluster.sh` lanza cada nodo de Ray como un proceso propio
+  (`scripts/local_cluster.py`, con la misma utilidad de varios nodos que usan
+  las pruebas). `ray start` no se usa: en WSL se colgaba al arrancar el head y
+  llegó a dejar WSL sin responder (ver `docs/progress.md`, paso 11).
+- PostgreSQL es una instancia propia en `TM_LOCAL_HOME/postgres`, accesible solo
+  por socket Unix en `TM_LOCAL_HOME/run` (puerto lógico 5433); no abre TCP ni
+  usa el servicio del sistema. Los datos persisten entre `stop` y `start`.
+- Mismos parámetros que Docker: head sin CPU, workers `tm-worker-N` con el
+  recurso `tm_worker`, descarga de bots por `http://127.0.0.1:8000` con un token
+  nuevo por arranque, variables gRPC y `TM_BACKEND=ray`.
+- `kill`, `pause`, `resume` y `restore` actúan sobre el proceso de un nodo y
+  todos sus descendientes, igual que `docker kill`, `pause`, `unpause` y `start`
+  sobre un contenedor.
+- Antes de arrancar se limpian restos de Ray (`ray stop --force` y la sesión
+  vieja en `/tmp/ray`): sin eso, un worker falló al registrarse tras un `stop`.
+- Lo que solo da Docker: límites de CPU y memoria por componente y aislamiento
+  de archivos entre roles. Sin Docker, un bot comparte máquina con todo lo demás.

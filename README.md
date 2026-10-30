@@ -11,6 +11,8 @@ informes individuales de [3.1](<docs/Fase 3 Reportes/PHASE3_1-REPORT.md>),
 [3.3](<docs/Fase 3 Reportes/PHASE3_3-REPORT.md>) y
 [3.4](<docs/Fase 3 Reportes/PHASE3_4-REPORT.md>).
 
+**Arrancar el sistema con Docker o sin Docker:** [deploy/ARRANQUE.md](deploy/ARRANQUE.md).
+
 ## Versiones fijadas
 
 El artefacto usa **Python 3.12** y **Ray 2.40.0**. Las dependencias de la

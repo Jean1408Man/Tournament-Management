@@ -37,7 +37,9 @@ def run_match(
         memory_limit_bytes=attempt.memory_limit_bytes,
         output_limit_bytes=attempt.output_limit_bytes,
     )
-    pipes = BotPipes(limits.memory_limit_bytes, limits.output_limit_bytes)
+    pipes = BotPipes(
+        limits.memory_limit_bytes, limits.output_limit_bytes, limits.stall_threshold_ms
+    )
     match_deadline = time.monotonic() + limits.match_timeout_ms / 1000
     try:
         if len(commands) != 2:

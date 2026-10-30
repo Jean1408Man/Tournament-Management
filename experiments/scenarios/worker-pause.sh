@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Escenario worker-pause (guía 4.4: "pausar un worker y reanudarlo después de
-# expirar su intento"). Congela ~40 s (TM_PAUSE_SECONDS) el worker de una partida
-# lenta. Ray lo da por muerto (~30 s) o vence el plazo del intento: el intento se
-# pierde y se reintenta en otro worker. Al reanudar, lo que llegue del intento
-# viejo debe quedar descartado. No es una partición de red (eso es 5.3).
+# expirar su intento"). Congela el worker de una partida lenta durante el plazo
+# del intento + 10 s (TM_PAUSE_SECONDS lo cambia). Ray NO da por muerto un worker
+# pausado: es nuestro plazo el que vence; se reintenta en otro worker y lo que
+# llegue del intento viejo queda descartado.
+# Variante corta (TM_PAUSE_SECONDS=40, menos que el plazo): el árbitro detecta que
+# estuvo congelado ⇒ infraestructura (referee_stalled) y reintento, nunca derrota.
+# No es una partición de red (eso es 5.3).
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 scenario_start worker-pause
-pause_seconds="${TM_PAUSE_SECONDS:-40}"
+pause_seconds="${TM_PAUSE_SECONDS:-$(( $(attempt_timeout_seconds) + 10 ))}"
 register slow-1 bots/slow.py
 register slow-2 bots/slow.py
 tournament="scn-worker-pause-$STAMP"
@@ -22,7 +25,7 @@ for _ in $(seq 1 $((pause_seconds / 5))); do sleep 5; sample_workers pausado; do
 worker_unpause "$victim"
 log "Reanudado $victim"
 for _ in $(seq 1 6); do sleep 5; sample_workers reanudado; done
-log "Contenedor $victim tras reanudar: $(docker container inspect --format '{{.State.Status}}' "$victim")"
+log "Estado de $victim tras reanudar: $(worker_state "$victim")"
 log "Estado final: $(wait_terminal "$tournament" 180)"
 dump "$tournament"
 run_checks "$tournament" "$victim" <<'EOF'
@@ -35,6 +38,8 @@ first = [a for a in attempts if a["generation"] == 1][0]
 accepted = [a for a in attempts if a["state"] == "accepted"]
 e.check("el torneo termina completed", e.tournament["state"] == "completed")
 e.check("el intento del worker pausado no fue aceptado", first["state"] != "accepted")
+e.check("el intento pausado no terminó en derrota de un bot",
+        (first["outcome"] or {}).get("kind") != "bot_failure")
 print(f"INFO  intento pausado: estado {first['state']}, motivo "
       f"{(first['outcome'] or {}).get('reason')}")
 e.check("exactamente un intento aceptado, en otro worker",

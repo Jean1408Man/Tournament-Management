@@ -37,7 +37,7 @@ TM_BACKEND=ray bash scripts/start-cluster.sh
 | Script | Exigencia | Hipótesis | Evidencia esperada |
 |---|---|---|---|
 | `worker-loss.sh` | P03: si un worker desaparece durante una partida, el torneo continúa | Matar el worker de una partida en curso produce otro intento en otro worker | Intento fallido por infraestructura en el worker matado; otro `attempt_id`, generación mayor y mismo `MatchSpec`; un único `result.accepted` |
-| `worker-pause.sh` | Guía 4.4: pausar un worker y reanudarlo tras expirar su intento | El intento del worker congelado ~40 s se pierde y se reintenta en otro | El intento pausado no se acepta; un único aceptado en otro worker; si llega algo del pausado, `result.discarded` |
+| `worker-pause.sh` | Guía 4.4: pausar un worker y reanudarlo tras expirar su intento | Pausado más que el plazo del intento, ese plazo vence (Ray no detecta una pausa) y se reintenta en otro. Con una pausa más corta, el árbitro detecta que estuvo congelado (`referee_stalled`) | El intento pausado no se acepta ni acaba en derrota de un bot; un único aceptado en otro worker; lo tardío, `result.discarded` |
 | `late-result.sh` | P03: impedir resultados aceptados duplicados | Un resultado válido de un intento ya reemplazado no puede imponerse | Inyección rechazada, `result.discarded (stale_attempt)`, el aceptado sigue siendo el del reintento |
 | `cancelled-tournament.sh` | Guía 4.4: un torneo cancelado no se reabre ni avanza | Cancelar, perder el worker e inyectar un resultado no cambia nada | Torneo y partidas `cancelled`, ningún intento nuevo, `result.discarded (tournament_not_running)` |
 | `faulty-bot.sh` | P03: distinguir partida que falla de worker que falla | Un bot defectuoso pierde y el worker sigue sano | Por cada defecto, `bot_failure` con victoria del óptimo en un único intento; workers `available` |
@@ -49,7 +49,7 @@ TM_BACKEND=ray bash scripts/start-cluster.sh
 |---|---|---|
 | `TM_API` | `http://127.0.0.1:8000` | Dirección de la API |
 | `TM_SCENARIO_PILES` | `[10,10,10]` | Montones de las partidas lentas: dos `slow.py` tardan ≈ fichas × 0,5 s |
-| `TM_PAUSE_SECONDS` | `40` | Duración de la pausa en `worker-pause.sh` |
+| `TM_PAUSE_SECONDS` | plazo del intento + 10 s | Duración de la pausa en `worker-pause.sh`; `40` prueba la variante corta |
 | `TM_OBSERVE_SECONDS` | `90` | Observación sin head en `head-loss.sh` |
 
 ## Herramientas

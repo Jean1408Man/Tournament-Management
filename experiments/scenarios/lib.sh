@@ -2,7 +2,8 @@
 # Utilidades comunes de los escenarios de fallo (etapa 4.4).
 # Cada escenario guarda su evidencia en experiments/results/<escenario>-<fecha>/
 # y termina con código distinto de 0 si alguna comprobación falla.
-# Modo actual: Docker (clúster de scripts/start-cluster.sh con TM_BACKEND=ray).
+# Modo Docker (scripts/start-cluster.sh con TM_BACKEND=ray) o local
+# (scripts/local-cluster.sh start); ver deploy/ARRANQUE.md.
 set -euo pipefail
 
 SCENARIO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,7 +31,7 @@ scenario_start() {  # nombre
   RESULTS="experiments/results/$1-$STAMP"
   mkdir -p "$RESULTS"
   : > "$RESULTS/resumen.txt"
-  log "Escenario $1 (resultados en experiments/results/$1-$STAMP)"
+  log "Escenario $1 en modo $MODE (resultados en experiments/results/$1-$STAMP)"
   curl -sf "$API/ready" >/dev/null || { log "La API no está lista en $API"; exit 2; }
 }
 
@@ -146,23 +147,97 @@ json.dump(events, open(f"{out}/{tournament}.events.json", "w"), indent=1)
 EOF
 }
 
-# --- Acciones sobre el clúster (modo Docker) ---
-worker_kill() { docker kill --signal KILL "$1" >/dev/null; }
-worker_pause() { docker pause "$1" >/dev/null; }
-worker_unpause() { docker unpause "$1" >/dev/null; }
+# --- Acciones sobre el clúster: Docker o local (scripts/local-cluster.sh) ---
+# Se detecta solo: Docker si el contenedor tm-coordinator está en marcha; si no,
+# local. TM_SCENARIO_MODE=docker|local lo fuerza.
+MODE="${TM_SCENARIO_MODE:-}"
+if [[ -z "$MODE" ]]; then
+  if [[ "$(docker container inspect --format '{{.State.Running}}' tm-coordinator 2>/dev/null)" == true ]]; then
+    MODE=docker
+  else
+    MODE=local
+  fi
+fi
+[[ "$MODE" == docker || "$MODE" == local ]] || { echo "TM_SCENARIO_MODE debe ser docker o local" >&2; exit 2; }
+LOCAL_CLUSTER="bash scripts/local-cluster.sh"
+LOCAL_HOME="${TM_LOCAL_HOME:-$HOME/.local/share/tournament-management}"
+LOCAL_DB="postgresql:///tournament_management?host=$LOCAL_HOME/run&port=${TM_LOCAL_PG_PORT:-5433}&user=tm"
+LOCAL_PY="${TM_VENV:-$PROJECT_DIR/.venv}/bin/python"
+
+local_alive() { [[ -f "$LOCAL_HOME/run/$1.pid" ]] && kill -0 "$(cat "$LOCAL_HOME/run/$1.pid")" 2>/dev/null; }
+
+worker_kill() {
+  if [[ $MODE == docker ]]; then docker kill --signal KILL "$1" >/dev/null; else $LOCAL_CLUSTER kill "$1" >/dev/null; fi
+}
+worker_pause() {
+  if [[ $MODE == docker ]]; then docker pause "$1" >/dev/null; else $LOCAL_CLUSTER pause "$1" >/dev/null; fi
+}
+worker_unpause() {
+  if [[ $MODE == docker ]]; then docker unpause "$1" >/dev/null; else $LOCAL_CLUSTER resume "$1" >/dev/null; fi
+}
+worker_state() {  # en marcha / detenido, para la evidencia
+  if [[ $MODE == docker ]]; then
+    docker container inspect --format '{{.State.Status}}' "$1"
+  elif local_alive "$1"; then echo running; else echo exited; fi
+}
 worker_restore() {  # vuelve a arrancar el worker si no está en marcha y espera a verlo available
   local name="$1" deadline=$((SECONDS + 120))
-  [[ "$(docker container inspect --format '{{.State.Running}}' "$name")" == true ]] ||
-    docker start "$name" >/dev/null
+  if [[ $MODE == docker ]]; then
+    [[ "$(docker container inspect --format '{{.State.Running}}' "$name")" == true ]] ||
+      docker start "$name" >/dev/null
+  else
+    $LOCAL_CLUSTER restore "$name" >/dev/null
+  fi
   while ((SECONDS < deadline)); do
     curl -s "$API/api/v1/workers" | grep -q "\"worker_id\":\"$name\",\"status\":\"available\"" && return 0
     sleep 2
   done
   log "Aviso: $name no volvió a available en 120 s"
 }
+head_kill() {
+  if [[ $MODE == docker ]]; then docker kill --signal KILL tm-head >/dev/null; else $LOCAL_CLUSTER kill head >/dev/null; fi
+}
+cluster_line() {  # estado de cada componente en una línea
+  if [[ $MODE == docker ]]; then
+    docker ps -a --filter name=tm- --format '{{.Names}}:{{.State}}' | sort | tr '\n' ' '
+  else
+    local name
+    for name in head $(cd "$LOCAL_HOME/run" 2>/dev/null && ls tm-worker-*.pid 2>/dev/null | sed 's/\.pid$//') coordinator; do
+      printf '%s:%s ' "$name" "$(local_alive "$name" && echo running || echo exited)"
+    done
+  fi
+}
+coordinator_logs() {
+  if [[ $MODE == docker ]]; then docker logs --tail 60 tm-coordinator 2>&1; else tail -60 "$LOCAL_HOME/logs/coordinator.log"; fi
+}
+cluster_recover() {  # procedimiento de recuperación tras perder el head (OPERATIONS.md)
+  if [[ $MODE == docker ]]; then
+    local name
+    docker start tm-head >/dev/null
+    for name in $(docker ps -a --filter "label=org.tournament-management.project=tournament-management" \
+        --format '{{.Names}}' | grep '^tm-worker-'); do
+      docker restart "$name" >/dev/null
+    done
+    docker restart tm-coordinator >/dev/null
+  else
+    $LOCAL_CLUSTER recover >/dev/null
+  fi
+}
 db_scalar() {  # consulta SQL de solo lectura sobre la base del clúster
-  docker exec tm-postgres psql -U tm -d tournament_management -Atc "$1"
+  if [[ $MODE == docker ]]; then
+    docker exec tm-postgres psql -U tm -d tournament_management -Atc "$1"
+  else
+    "$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)/psql" "$LOCAL_DB" -Atc "$1"
+  fi
+}
+attempt_timeout_seconds() {  # plazo del intento con el que corre el coordinador
+  local code='import os; from tournament_management.config import Settings; print(Settings.load({}, os.environ).attempt_timeout_ms // 1000)'
+  if [[ $MODE == docker ]]; then docker exec tm-coordinator python -c "$code"; else "$LOCAL_PY" -c "$code"; fi
 }
 inject_late() {  # attempt_id → JSON de la herramienta de laboratorio
-  docker exec -i tm-coordinator python - "$1" < "$SCENARIO_DIR/inject_late_result.py"
+  if [[ $MODE == docker ]]; then
+    docker exec -i tm-coordinator python - "$1" < "$SCENARIO_DIR/inject_late_result.py"
+  else
+    TM_DATABASE_URL="$LOCAL_DB" "$LOCAL_PY" - "$1" < "$SCENARIO_DIR/inject_late_result.py"
+  fi
 }
