@@ -5,8 +5,10 @@
 # pausado: es nuestro plazo el que vence; se reintenta en otro worker y lo que
 # llegue del intento viejo queda descartado.
 # Variante corta (TM_PAUSE_SECONDS=40, menos que el plazo): el árbitro detecta que
-# estuvo congelado ⇒ infraestructura (referee_stalled) y reintento, nunca derrota.
-# No es una partición de red (eso es 5.3).
+# estuvo congelado ⇒ infraestructura (referee_stalled) y reintento, nunca derrota;
+# si la pausa cae con la jugada ya recibida, no vence ningún plazo y la partida
+# termina con normalidad (E3.10: ambos desenlaces valen y se registra cuál).
+# No es una partición de red (eso es worker-partition.sh).
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
 scenario_start worker-pause
 pause_seconds="${TM_PAUSE_SECONDS:-$(( $(attempt_timeout_seconds) + 10 ))}"
@@ -37,13 +39,22 @@ attempts = e.attempts()
 first = [a for a in attempts if a["generation"] == 1][0]
 accepted = [a for a in attempts if a["state"] == "accepted"]
 e.check("el torneo termina completed", e.tournament["state"] == "completed")
-e.check("el intento del worker pausado no fue aceptado", first["state"] != "accepted")
 e.check("el intento pausado no terminó en derrota de un bot",
         (first["outcome"] or {}).get("kind") != "bot_failure")
 print(f"INFO  intento pausado: estado {first['state']}, motivo "
       f"{(first['outcome'] or {}).get('reason')}")
-e.check("exactamente un intento aceptado, en otro worker",
-        len(accepted) == 1 and accepted[0]["outcome"]["worker_id"] != victim)
+# E3.10: dos desenlaces válidos. Si la pausa cae mientras el árbitro espera una
+# jugada, vence un plazo y el árbitro se culpa (referee_stalled) o vence el
+# nuestro: reintento en otro worker. Si cae con la jugada ya recibida, ningún
+# plazo vence y la partida termina con normalidad en el worker pausado.
+if first["state"] == "accepted":
+    print("INFO  desenlace: terminó con normalidad en el worker pausado (ningún plazo venció)")
+    e.check("un único intento aceptado: el pausado, sin reintentos",
+            len(accepted) == 1 and len(attempts) == 1)
+else:
+    print("INFO  desenlace: reintento en otro worker")
+    e.check("exactamente un intento aceptado, en otro worker",
+            len(accepted) == 1 and accepted[0]["outcome"]["worker_id"] != victim)
 late = [d for d in e.of_type("result.discarded") if d["attempt_id"] == first["attempt_id"]]
 print(f"INFO  resultados tardíos del intento pausado descartados: {len(late)} "
       + " ".join(d["detail"] for d in late))

@@ -26,6 +26,8 @@ done
 STAMP="$(date +%Y%m%d-%H%M%S)"
 RESULTS=""
 FAILURES=0
+COMMAND="$0${*:+ $*}"  # lib.sh se carga con source: $@ son los argumentos del escenario
+FOLLOWERS=()           # clientes que escuchan cada torneo creado (I6, E3.7)
 
 scenario_start() {  # nombre
   RESULTS="experiments/results/$1-$STAMP"
@@ -33,6 +35,7 @@ scenario_start() {  # nombre
   : > "$RESULTS/resumen.txt"
   log "Escenario $1 en modo $MODE (resultados en experiments/results/$1-$STAMP)"
   curl -sf "$API/ready" >/dev/null || { log "La API no está lista en $API"; exit 2; }
+  "$PY" "$SCENARIO_DIR/meta.py" "$RESULTS" "$MODE" "$COMMAND" || log "Aviso: meta.json incompleto"
 }
 
 log() {
@@ -56,6 +59,7 @@ run_checks() {
 }
 
 finish() {
+  wait_followers
   verify_evidence
   if ((FAILURES)); then
     log "Resultado: $FAILURES comprobación(es) fallida(s)"
@@ -73,15 +77,29 @@ register() {  # id archivo-del-bot
   [[ "$status" == 201 ]] || { log "No se pudo registrar $1 (HTTP $status)"; exit 2; }
 }
 
-create() {  # id formato participante...
+create() {  # id formato participante... (crea y deja un cliente escuchando: I6)
   local id="$1" format="$2" ids status
   shift 2
   ids=$(printf '"%s",' "$@"); ids="${ids%,}"
-  status=$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
-    -H "Idempotency-Key: $id" \
-    --data-binary "{\"tournament_id\":\"$id\",\"format\":\"$format\",\"competitor_ids\":[$ids],\"initial_piles\":$PILES,\"first_player\":0,\"seed\":42}" \
-    "$API/api/v1/tournaments")
+  status=$("$PY" experiments/load/load.py create "$API" "$RESULTS" \
+    "{\"tournament_id\":\"$id\",\"format\":\"$format\",\"competitor_ids\":[$ids],\"initial_piles\":$PILES,\"first_player\":0,\"seed\":42}")
   [[ "$status" == 202 ]] || { log "No se pudo crear $id (HTTP $status)"; exit 2; }
+  "$PY" experiments/load/load.py follow "$API" "$RESULTS" "$id" &
+  FOLLOWERS+=($!)
+}
+
+wait_followers() {  # cada cliente termina cuando su torneo es terminal; une client.jsonl
+  local pid deadline=$((SECONDS + 60))
+  ((${#FOLLOWERS[@]})) || return 0
+  for pid in "${FOLLOWERS[@]}"; do
+    while kill -0 "$pid" 2>/dev/null && ((SECONDS < deadline)); do sleep 1; done
+    if kill -0 "$pid" 2>/dev/null; then
+      log "Aviso: el cliente $pid seguía escuchando a los 60 s; se detiene"
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+  FOLLOWERS=()
+  cat "$RESULTS"/client-*.jsonl > "$RESULTS/client.jsonl"
 }
 
 state() { curl -s "$API/api/v1/tournaments/$1" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["state"])'; }
@@ -207,6 +225,18 @@ worker_restore() {  # vuelve a arrancar el worker y espera a verlo available con
     sleep 2
   done
   log "Aviso: $name no volvió a available con un solo nodo Ray en 120 s"
+}
+coordinator_kill() {
+  if [[ $MODE == docker ]]; then docker kill --signal KILL tm-coordinator >/dev/null; else $LOCAL_CLUSTER kill coordinator >/dev/null; fi
+}
+coordinator_restore() {  # arranca el coordinador y espera /ready 200; imprime los segundos
+  local start=$SECONDS
+  if [[ $MODE == docker ]]; then docker start tm-coordinator >/dev/null; else $LOCAL_CLUSTER restore coordinator >/dev/null; fi
+  while ((SECONDS - start < 180)); do
+    curl -sf --max-time 5 "$API/ready" >/dev/null && { echo $((SECONDS - start)); return 0; }
+    sleep 1
+  done
+  log "Aviso: el coordinador no quedó listo en 180 s"; echo -1
 }
 head_kill() {
   if [[ $MODE == docker ]]; then docker kill --signal KILL tm-head >/dev/null; else $LOCAL_CLUSTER kill head >/dev/null; fi

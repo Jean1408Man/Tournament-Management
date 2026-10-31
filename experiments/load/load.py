@@ -14,6 +14,8 @@ Las métricas usan PYTHONPATH=src (formatos del servidor, sin dependencias).
 Uso: PYTHONPATH=src python experiments/load/load.py --out DIR \\
        --mix round_robin:8x1,elimination:4x3 [--bot slow] [--api URL]
 `dump` también lo usa lib.sh: python experiments/load/load.py dump API TORNEO DIR
+Los escenarios de fallo (5.3, E3.7) crean con `create API DIR CUERPO` y escuchan
+con `follow API DIR TORNEO`; cada torneo deja client-<torneo>.jsonl.
 `metrics DIR` recalcula metrics.json de una carpeta ya guardada.
 """
 
@@ -89,10 +91,10 @@ def listen(base, deadline, on_event=None):
 
 
 class Client:
-    def __init__(self, api, out):
+    def __init__(self, api, out, log_name="client.jsonl"):
         self.api, self.out = api, Path(out)
         self.lock = threading.Lock()
-        self.log = open(self.out / "client.jsonl", "a", encoding="utf-8")
+        self.log = open(self.out / log_name, "a", encoding="utf-8")
 
     def note(self, kind, tournament_id, **fields):
         line = json.dumps(
@@ -119,16 +121,23 @@ class Client:
         if status not in (200, 201):
             raise SystemExit(f"No se pudo registrar {competitor_id}: HTTP {status} {body}")
 
+    def post(self, tournament_id, body):
+        payload = json.dumps({**body, "tournament_id": tournament_id}).encode()
+        return request(
+            "POST",
+            f"{self.api}/api/v1/tournaments",
+            data=payload,
+            headers={"Content-Type": "application/json", "Idempotency-Key": tournament_id},
+        )
+
+    def follow(self, tournament_id, deadline):
+        base = f"{self.api}/api/v1/tournaments/{tournament_id}"
+        listen(base, deadline, lambda e: self.note("event", tournament_id, event=e))
+
     def run(self, tournament_id, body, deadline):
         """Crea (respetando 429), escucha en vivo hasta el final y guarda la evidencia."""
-        payload = json.dumps({**body, "tournament_id": tournament_id}).encode()
         while True:
-            status, headers, answer = request(
-                "POST",
-                f"{self.api}/api/v1/tournaments",
-                data=payload,
-                headers={"Content-Type": "application/json", "Idempotency-Key": tournament_id},
-            )
+            status, headers, answer = self.post(tournament_id, body)
             if status == 202:
                 self.note("created", tournament_id, status=status)
                 break
@@ -138,8 +147,7 @@ class Client:
             wait = int(headers.get("Retry-After", "5"))
             self.note("rejected", tournament_id, status=status, retry_after=wait)
             time.sleep(wait)
-        base = f"{self.api}/api/v1/tournaments/{tournament_id}"
-        listen(base, deadline, lambda e: self.note("event", tournament_id, event=e))
+        self.follow(tournament_id, deadline)
         dump(self.api, tournament_id, self.out)
 
 
@@ -278,6 +286,23 @@ def metrics(out):
 def main():
     if sys.argv[1:2] == ["dump"]:
         dump(*sys.argv[2:5])
+        return
+    if sys.argv[1:2] == ["create"]:  # create API DIR CUERPO_JSON → imprime el código HTTP
+        api, out, body = sys.argv[2], sys.argv[3], json.loads(sys.argv[4])
+        tournament_id = body["tournament_id"]
+        client = Client(api, out, f"client-{tournament_id}.jsonl")
+        status, _, answer = client.post(tournament_id, body)
+        if status == 202:
+            client.note("created", tournament_id, status=status)
+        else:
+            client.note("failed", tournament_id, status=status, body=answer)
+        print(status)
+        return
+    if sys.argv[1:2] == ["follow"]:  # follow API DIR TORNEO: escucha hasta que sea terminal
+        api, out, tournament_id = sys.argv[2:5]
+        Client(api, out, f"client-{tournament_id}.jsonl").follow(
+            tournament_id, time.monotonic() + 1800
+        )
         return
     if sys.argv[1:2] == ["metrics"]:
         result = metrics(sys.argv[2])

@@ -5,7 +5,18 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from enum import StrEnum
+from functools import cache
 from typing import Self, get_args, get_origin, get_type_hints
+
+
+@cache
+def _fields(cls: type) -> dict[str, object]:
+    """Tipos de los campos de una clase de mensaje, una vez por clase.
+
+    get_type_hints recompila las anotaciones (cadenas por `from __future__`) en
+    cada llamada: por objeto era ~25 % de la CPU al aceptar un resultado (5.3).
+    """
+    return get_type_hints(cls)
 
 
 def _decode(value: object, expected: type) -> object:
@@ -31,7 +42,7 @@ class Message:
     def __post_init__(self) -> None:
         if type(self.schema_version) is not int or self.schema_version != 1:
             raise ValueError("Versión de mensaje no soportada")
-        for name, expected in get_type_hints(type(self)).items():
+        for name, expected in _fields(type(self)).items():
             value = getattr(self, name)
             if isinstance(expected, type) and issubclass(expected, Message):
                 if type(value) is not expected:
@@ -49,7 +60,7 @@ class Message:
 
     @classmethod
     def from_dict(cls, data: dict) -> Self:
-        fields = get_type_hints(cls)
+        fields = _fields(cls)
         if set(data) != set(fields):
             raise ValueError("Campos ausentes o desconocidos")
         return cls(**{key: _decode(value, fields[key]) for key, value in data.items()})

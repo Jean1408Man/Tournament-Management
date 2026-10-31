@@ -6,7 +6,7 @@
 #
 # Uso: bash scripts/local-cluster.sh start|stop|status|reset|add-worker N|
 #      kill NOMBRE|pause NOMBRE|resume NOMBRE|restore NOMBRE|recover
-# NOMBRE: head o tm-worker-N.
+# NOMBRE: head, coordinator o tm-worker-N.
 set -euo pipefail
 
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -199,7 +199,11 @@ case "${1:-}" in
   resume) signal_tree CONT "${2:?nombre}"; say "Reanudado $2" ;;
   restore)
     name="${2:?nombre}"
-    if [[ "$name" == head ]]; then alive head || head_start; else worker_start "$name"; fi
+    case "$name" in
+      head) alive head || head_start ;;
+      coordinator) alive coordinator || coordinator_start ;;
+      *) worker_start "$name" ;;
+    esac
     ;;
   recover)
     # Equivale al procedimiento de OPERATIONS.md tras perder el head: head nuevo,

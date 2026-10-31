@@ -76,8 +76,8 @@ bash scripts/local-cluster.sh stop
 bash scripts/local-cluster.sh start
 ```
 
-Otros subcomandos: `add-worker N`, `kill|pause|resume|restore NOMBRE` (`head` o
-`tm-worker-N`), `recover` (tras perder el head) y `reset` (borra todos los datos
+Otros subcomandos: `add-worker N`, `kill|pause|resume|restore NOMBRE` (`head`,
+`coordinator` o `tm-worker-N`), `recover` (tras perder el head) y `reset` (borra todos los datos
 locales; pide confirmación). Logs en `~/.local/share/tournament-management/logs/`.
 
 ## Primer torneo (igual en los dos modos)
