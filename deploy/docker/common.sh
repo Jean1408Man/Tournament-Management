@@ -3,7 +3,7 @@
 set -euo pipefail
 
 TM_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-TM_PROJECT_DIR="$(cd -- "$TM_SCRIPT_DIR/.." && pwd)"
+TM_PROJECT_DIR="$(cd -- "$TM_SCRIPT_DIR/../.." && pwd)"
 # Leer solo datos, sin ejecutar el archivo como código shell. El entorno prevalece.
 TM_ENV_FILE="${TM_ENV_FILE:-$TM_PROJECT_DIR/.env}"
 if [[ -f "$TM_ENV_FILE" ]]; then

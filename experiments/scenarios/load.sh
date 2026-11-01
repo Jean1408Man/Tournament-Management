@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Ejecución de carga de 5.1: generador (solo HTTP) más muestreo de conexiones
 # PostgreSQL (E1.10) y de memoria/CPU (docker stats, o top en local), y tm verify
-# al final (finish de lib.sh). Uso: bash experiments/load/run.sh NOMBRE [opciones de load.py]
-# Ejemplo: bash experiments/load/run.sh mezcla --mix round_robin:8x1,elimination:4x3 --bot slow
+# al final (finish de lib.sh). Uso: bash experiments/scenarios/load.sh NOMBRE [opciones de load.py]
+# Ejemplo: bash experiments/scenarios/load.sh mezcla --mix round_robin:8x1,elimination:4x3 --bot slow
 set -euo pipefail
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../scenarios" && pwd)/lib.sh"
-name="${1:?Uso: run.sh NOMBRE [opciones de load.py]}"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
+name="${1:?Uso: load.sh NOMBRE [opciones de load.py]}"
 shift
 scenario_start "load-$name"
 log "Opciones: $*"
@@ -36,7 +36,7 @@ sampler=$!
 trap 'kill "$sampler" 2>/dev/null || true' EXIT
 
 set +e
-PYTHONPATH=src PYTHONIOENCODING=utf-8 "$PY" experiments/load/load.py --api "$API" \
+PYTHONPATH=src PYTHONIOENCODING=utf-8 "$PY" experiments/tools/load.py --api "$API" \
   --out "$RESULTS" --prefix "load-$name-$STAMP" "$@" | tee -a "$RESULTS/resumen.txt"
 status=${PIPESTATUS[0]}
 set -e

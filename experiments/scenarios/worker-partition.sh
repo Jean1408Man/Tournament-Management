@@ -8,7 +8,7 @@
 # intento falla o vence nuestro plazo y se reintenta en otro worker, sin derrota;
 # lo tardío se descarta. Al reconectar se OBSERVA si Ray readmite el worker o
 # hace falta reiniciarlo.
-source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 [[ $MODE == docker ]] || { echo "worker-partition solo existe en modo Docker (E3.3)" >&2; exit 2; }
 scenario_start worker-partition
 observe="${TM_PARTITION_SECONDS:-60}"
@@ -46,8 +46,7 @@ docker network connect tm-net "$victim"
 ip_after=$(ip_of "$victim")
 log "Reconectado $victim ($ip_after); enlaces después: $(links "$victim")"
 # Readmitido = Ray lista un nodo vivo por worker. available en /workers no basta:
-# Ray puede dar de baja el nodo después (campaña 30-10-2026: el raylet murió y el
-# contenedor siguió running con `ray start` vivo).
+# Ray puede dar de baja el nodo después de mostrarlo available.
 readmitted=no
 start=$SECONDS
 while ((SECONDS - start < 90)); do
@@ -86,9 +85,8 @@ print(f"INFO  resultados tardíos del intento aislado descartados: {len(late)}")
 e.one_result_per_completed_match()
 e.done()
 EOF
-# Siempre se reinicia: aunque Ray lo readmita, puede darlo de baja minutos después
-# (el raylet muere y el contenedor sigue running); el siguiente escenario no debe
-# heredarlo.
+# Siempre se reinicia: aunque Ray lo readmita, puede darlo de baja minutos
+# después, y el siguiente escenario no debe heredarlo.
 log "Se reinicia $victim para dejar el clúster limpio (readmitido por Ray: $readmitted)"
 docker restart "$victim" >/dev/null
 worker_restore "$victim"

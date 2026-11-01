@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Añade un worker al clúster en marcha (4.3), con la misma imagen y token que el
-# coordinador. Uso: bash scripts/add-worker.sh tm-worker-N
+# coordinador. Uso: bash deploy/docker/add-worker.sh tm-worker-N
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 name="${1:-}"
-[[ "$name" =~ ^tm-worker-[0-9]+$ ]] || die "Uso: bash scripts/add-worker.sh tm-worker-N"
+[[ "$name" =~ ^tm-worker-[0-9]+$ ]] || die "Uso: bash deploy/docker/add-worker.sh tm-worker-N"
 require_docker
 if docker container inspect "$name" >/dev/null 2>&1; then
   die "Ya existe $name. Usa docker start $name si estaba detenido."

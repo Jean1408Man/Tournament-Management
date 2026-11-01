@@ -3,7 +3,7 @@
 import importlib.util
 from pathlib import Path
 
-PATH = Path(__file__).resolve().parents[2] / "experiments/scenarios/meta.py"
+PATH = Path(__file__).resolve().parents[2] / "experiments/tools/meta.py"
 spec = importlib.util.spec_from_file_location("scenario_meta", PATH)
 meta = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(meta)

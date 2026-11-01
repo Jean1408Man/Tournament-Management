@@ -6,7 +6,7 @@
 # (coordinator_restart) y se reintenta con otra generación; el cliente se
 # reconecta a los eventos desde su última sequence sin ver huecos ni eventos que
 # luego desaparezcan (I6 en tm verify).
-source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 scenario_start coordinator-restart
 down="${TM_DOWN_SECONDS:-10}"
 for id in slow-1 slow-2 slow-3 slow-4; do register "$id" bots/slow.py; done

@@ -4,12 +4,12 @@
 # Los datos persisten en TM_LOCAL_HOME (~/.local/share/tournament-management)
 # entre stop y start; solo `reset` los borra. Guía: deploy/ARRANQUE.md.
 #
-# Uso: bash scripts/local-cluster.sh start|stop|status|reset|add-worker N|
+# Uso: bash deploy/local/local-cluster.sh start|stop|status|reset|add-worker N|
 #      kill NOMBRE|pause NOMBRE|resume NOMBRE|restore NOMBRE|recover
 # NOMBRE: head, coordinator o tm-worker-N.
 set -euo pipefail
 
-PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_DIR"
 LOCAL_HOME="${TM_LOCAL_HOME:-$HOME/.local/share/tournament-management}"
 RUN="$LOCAL_HOME/run" LOGS="$LOCAL_HOME/logs" PGDATA_DIR="$LOCAL_HOME/postgres"
@@ -102,7 +102,7 @@ clean_ray() {
 head_start() {
   rm -f "$RUN/head.address"
   : > "$LOGS/head.log"
-  start_bg head "$VENV/bin/python" scripts/local_cluster.py head \
+  start_bg head "$VENV/bin/python" deploy/local/local_cluster.py head \
     --client-port "$CLIENT_PORT" --address-file "$RUN/head.address"
   wait_for "head de Ray" 120 --watch head test -s "$RUN/head.address" ||
     die "El head de Ray terminó al arrancar (ver $LOGS/head.log)"
@@ -116,7 +116,7 @@ worker_start() {  # nombre
     : > "$LOGS/$1.log"
     # Sin volumen compartido: descarga los bots del coordinador con el token (4.2).
     TM_ARTIFACT_URL="$API" TM_INTERNAL_TOKEN="$(cat "$RUN/token")" \
-      start_bg "$1" "$VENV/bin/python" scripts/local_cluster.py worker \
+      start_bg "$1" "$VENV/bin/python" deploy/local/local_cluster.py worker \
       --name "$1" --address-file "$RUN/head.address"
     wait_for "$1" 120 --watch "$1" grep -q "listo worker $1" "$LOGS/$1.log" && return 0
     say "$1 terminó al registrarse (intento $attempt): $(grep -m1 -E 'Error|error' "$LOGS/$1.log" | cut -c1-160)"

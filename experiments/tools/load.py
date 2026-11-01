@@ -11,9 +11,9 @@ se corrige a saltos de ~24 s. Las latencias usan la hora de recepción del
 cliente y el orden siempre la sequence.
 Las métricas usan PYTHONPATH=src (formatos del servidor, sin dependencias).
 
-Uso: PYTHONPATH=src python experiments/load/load.py --out DIR \\
+Uso: PYTHONPATH=src python experiments/tools/load.py --out DIR \\
        --mix round_robin:8x1,elimination:4x3 [--bot slow] [--api URL]
-`dump` también lo usa lib.sh: python experiments/load/load.py dump API TORNEO DIR
+`dump` también lo usa lib.sh: python experiments/tools/load.py dump API TORNEO DIR
 Los escenarios de fallo (5.3, E3.7) crean con `create API DIR CUERPO` y escuchan
 con `follow API DIR TORNEO`; cada torneo deja client-<torneo>.jsonl.
 `metrics DIR` recalcula metrics.json de una carpeta ya guardada.

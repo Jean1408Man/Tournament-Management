@@ -5,7 +5,7 @@ por el mismo código de aceptación que usa el coordinador
 (PersistentTournamentService.accept). No es un endpoint ni forma parte del
 paquete: se ejecuta a mano dentro del coordinador, que tiene TM_DATABASE_URL.
 
-    docker exec -i tm-coordinator python - ATTEMPT_ID < experiments/scenarios/inject_late_result.py
+    docker exec -i tm-coordinator python - ATTEMPT_ID < experiments/tools/inject_late_result.py
 
 Imprime un JSON con el intento y si fue aceptado; el rechazo queda en el
 historial del torneo como evento result.discarded.

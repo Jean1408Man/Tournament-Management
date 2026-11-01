@@ -9,7 +9,7 @@
 # si la pausa cae con la jugada ya recibida, no vence ningún plazo y la partida
 # termina con normalidad (E3.10: ambos desenlaces valen y se registra cuál).
 # No es una partición de red (eso es worker-partition.sh).
-source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 scenario_start worker-pause
 pause_seconds="${TM_PAUSE_SECONDS:-$(( $(attempt_timeout_seconds) + 10 ))}"
 register slow-1 bots/slow.py

@@ -2,7 +2,7 @@
 
 Contrato de máquina: [openapi-v1.json](openapi-v1.json), versión 1.1.0 (1.1.0 añade la respuesta 429 de 5.1; ampliación compatible).
 La aplicación publica el mismo documento en `/api/v1/openapi.json` y su interfaz
-en `/docs`. Regenerar con `uv run python scripts/export-openapi.py` y verificar
+en `/docs`. Regenerar con `uv run python contracts/export-openapi.py` y verificar
 con `uv run pytest tests/unit/test_api_contract.py -q`. No requiere servidor ni BD.
 
 ## Recursos

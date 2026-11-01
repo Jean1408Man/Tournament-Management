@@ -5,7 +5,7 @@
 # resultado tardío. Desde 5.1 las tres partidas corren a la vez: se comparan los
 # intentos al cancelar y 20 s después. El torneo debe seguir cancelled, sin
 # intentos ni resultados nuevos, y el resultado tardío queda descartado (tournament_not_running).
-source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 scenario_start cancelled-tournament
 for id in slow-1 slow-2 slow-3; do register "$id" bots/slow.py; done
 tournament="scn-cancelled-$STAMP"

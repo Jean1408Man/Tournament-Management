@@ -24,7 +24,7 @@ con PostgreSQL y archivos reales: recuperación desde otra instancia y desde otr
 proceso CLI, deduplicación por hash, idempotencia, carreras de identidad y fallo
 de publicación/commit. Se aplican los mismos requisitos PostgreSQL anteriores.
 Las pruebas de despliegue usan dobles de Docker para comprobar los montajes;
-la comprobación manual del clúster real es `bash scripts/probe-artifact.sh HASH`.
+la comprobación manual del clúster real es `bash deploy/docker/probe-artifact.sh HASH`.
 
 ## API durable (etapa 3.3)
 

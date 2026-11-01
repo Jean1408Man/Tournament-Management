@@ -2,12 +2,12 @@
 # Utilidades comunes de los escenarios de fallo (etapa 4.4).
 # Cada escenario guarda su evidencia en experiments/results/<escenario>-<fecha>/
 # y termina con código distinto de 0 si alguna comprobación falla.
-# Modo Docker (scripts/start-cluster.sh con TM_BACKEND=ray) o local
-# (scripts/local-cluster.sh start); ver deploy/ARRANQUE.md.
+# Modo Docker (deploy/docker/start-cluster.sh con TM_BACKEND=ray) o local
+# (deploy/local/local-cluster.sh start); ver deploy/ARRANQUE.md.
 set -euo pipefail
 
-SCENARIO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd -- "$SCENARIO_DIR/../.." && pwd)"
+TOOLS_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd -- "$TOOLS_DIR/../.." && pwd)"
 # Rutas relativas a la raíz: valen igual para Python de Windows (Git Bash) y de Linux.
 cd "$PROJECT_DIR"
 API="${TM_API:-http://127.0.0.1:8000}"
@@ -35,7 +35,7 @@ scenario_start() {  # nombre
   : > "$RESULTS/resumen.txt"
   log "Escenario $1 en modo $MODE (resultados en experiments/results/$1-$STAMP)"
   curl -sf "$API/ready" >/dev/null || { log "La API no está lista en $API"; exit 2; }
-  "$PY" "$SCENARIO_DIR/meta.py" "$RESULTS" "$MODE" "$COMMAND" || log "Aviso: meta.json incompleto"
+  "$PY" "$TOOLS_DIR/meta.py" "$RESULTS" "$MODE" "$COMMAND" || log "Aviso: meta.json incompleto"
 }
 
 log() {
@@ -51,7 +51,7 @@ log() {
 run_checks() {
   local out status
   set +e
-  out=$(PYTHONPATH=experiments/scenarios "$PY" - "$RESULTS" "$@")
+  out=$(PYTHONPATH=experiments/tools "$PY" - "$RESULTS" "$@")
   status=$?
   set -e
   printf '%s\n' "$out" | tee -a "$RESULTS/resumen.txt"
@@ -81,10 +81,10 @@ create() {  # id formato participante... (crea y deja un cliente escuchando: I6)
   local id="$1" format="$2" ids status
   shift 2
   ids=$(printf '"%s",' "$@"); ids="${ids%,}"
-  status=$("$PY" experiments/load/load.py create "$API" "$RESULTS" \
+  status=$("$PY" experiments/tools/load.py create "$API" "$RESULTS" \
     "{\"tournament_id\":\"$id\",\"format\":\"$format\",\"competitor_ids\":[$ids],\"initial_piles\":$PILES,\"first_player\":0,\"seed\":42}")
   [[ "$status" == 202 ]] || { log "No se pudo crear $id (HTTP $status)"; exit 2; }
-  "$PY" experiments/load/load.py follow "$API" "$RESULTS" "$id" &
+  "$PY" experiments/tools/load.py follow "$API" "$RESULTS" "$id" &
   FOLLOWERS+=($!)
 }
 
@@ -145,7 +145,7 @@ sample_workers() {  # etiqueta → añade una muestra con hora a workers.log
 }
 
 dump() {  # torneo → guarda torneo, todas las partidas y el historial completo
-  "$PY" experiments/load/load.py dump "$API" "$1" "$RESULTS"
+  "$PY" experiments/tools/load.py dump "$API" "$1" "$RESULTS"
 }
 
 verify_evidence() {  # tm verify (5.2) sobre todo lo guardado; informe en verify.json
@@ -163,7 +163,7 @@ verify_evidence() {  # tm verify (5.2) sobre todo lo guardado; informe en verify
   fi
 }
 
-# --- Acciones sobre el clúster: Docker o local (scripts/local-cluster.sh) ---
+# --- Acciones sobre el clúster: Docker o local (deploy/local/local-cluster.sh) ---
 # Se detecta solo: Docker si el contenedor tm-coordinator está en marcha; si no,
 # local. TM_SCENARIO_MODE=docker|local lo fuerza.
 MODE="${TM_SCENARIO_MODE:-}"
@@ -175,7 +175,7 @@ if [[ -z "$MODE" ]]; then
   fi
 fi
 [[ "$MODE" == docker || "$MODE" == local ]] || { echo "TM_SCENARIO_MODE debe ser docker o local" >&2; exit 2; }
-LOCAL_CLUSTER="bash scripts/local-cluster.sh"
+LOCAL_CLUSTER="bash deploy/local/local-cluster.sh"
 LOCAL_HOME="${TM_LOCAL_HOME:-$HOME/.local/share/tournament-management}"
 LOCAL_DB="postgresql:///tournament_management?host=$LOCAL_HOME/run&port=${TM_LOCAL_PG_PORT:-5433}&user=tm"
 LOCAL_PY="${TM_VENV:-$PROJECT_DIR/.venv}/bin/python"
@@ -280,8 +280,8 @@ attempt_timeout_seconds() {  # plazo del intento con el que corre el coordinador
 }
 inject_late() {  # attempt_id → JSON de la herramienta de laboratorio
   if [[ $MODE == docker ]]; then
-    docker exec -i tm-coordinator python - "$1" < "$SCENARIO_DIR/inject_late_result.py"
+    docker exec -i tm-coordinator python - "$1" < "$TOOLS_DIR/inject_late_result.py"
   else
-    TM_DATABASE_URL="$LOCAL_DB" "$LOCAL_PY" - "$1" < "$SCENARIO_DIR/inject_late_result.py"
+    TM_DATABASE_URL="$LOCAL_DB" "$LOCAL_PY" - "$1" < "$TOOLS_DIR/inject_late_result.py"
   fi
 }

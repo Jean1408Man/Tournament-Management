@@ -23,11 +23,11 @@ docker pull postgres:16.6-bookworm
 ```
 
 ```bash
-bash scripts/build-image.sh
+bash deploy/docker/build-image.sh
 ```
 
 ```bash
-TM_BACKEND=ray bash scripts/start-cluster.sh
+TM_BACKEND=ray bash deploy/docker/start-cluster.sh
 ```
 
 ```bash
@@ -37,10 +37,10 @@ curl -i http://127.0.0.1:8000/ready
 Parar (los datos se conservan):
 
 ```bash
-bash scripts/stop-cluster.sh
+bash deploy/docker/stop-cluster.sh
 ```
 
-Añadir un worker: `bash scripts/add-worker.sh tm-worker-3`. En Git Bash de
+Añadir un worker: `bash deploy/docker/add-worker.sh tm-worker-3`. En Git Bash de
 Windows, si un script falla con rutas `C:/...` en argumentos de Docker, antepón
 `MSYS_NO_PATHCONV=1` a `start-cluster.sh`.
 
@@ -59,21 +59,21 @@ uv sync --locked --extra dev
 ```
 
 ```bash
-bash scripts/local-cluster.sh start
+bash deploy/local/local-cluster.sh start
 ```
 
 ```bash
-bash scripts/local-cluster.sh status
+bash deploy/local/local-cluster.sh status
 ```
 
 Parar (los datos se conservan) y volver a arrancar:
 
 ```bash
-bash scripts/local-cluster.sh stop
+bash deploy/local/local-cluster.sh stop
 ```
 
 ```bash
-bash scripts/local-cluster.sh start
+bash deploy/local/local-cluster.sh start
 ```
 
 Otros subcomandos: `add-worker N`, `kill|pause|resume|restore NOMBRE` (`head`,
@@ -113,7 +113,7 @@ Los seis escenarios y su evidencia: [experiments/scenarios/README.md](../experim
 
 ## Cambiar de modo
 
-1. Para el modo actual: `bash scripts/stop-cluster.sh` o `bash scripts/local-cluster.sh stop`.
+1. Para el modo actual: `bash deploy/docker/stop-cluster.sh` o `bash deploy/local/local-cluster.sh stop`.
 2. Arranca el otro con su `start`.
 
 Los datos de cada modo son independientes: un bot o un torneo creado en Docker

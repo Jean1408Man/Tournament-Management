@@ -457,7 +457,7 @@ def test_lab_injection_goes_through_real_acceptance_and_is_discarded(database):
     service.invalidate(first.match.match_id, first.attempt_id)
     second = issue(service, first.match, 2)
     assert service.accept(outcome(second))
-    script = Path(__file__).resolve().parents[2] / "experiments/scenarios/inject_late_result.py"
+    script = Path(__file__).resolve().parents[2] / "experiments/tools/inject_late_result.py"
     run = subprocess.run(
         [sys.executable, "-", first.attempt_id], input=script.read_text(encoding="utf-8"),
         env={"PATH": "/usr/bin:/bin", "TM_DATABASE_URL": database},

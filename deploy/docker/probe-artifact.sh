@@ -3,7 +3,7 @@
 # sin volumen compartido ni acceso a PostgreSQL.
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
-[[ $# == 1 && "$1" =~ ^[0-9a-f]{64}$ ]] || die "Uso: bash scripts/probe-artifact.sh SHA256"
+[[ $# == 1 && "$1" =~ ^[0-9a-f]{64}$ ]] || die "Uso: bash deploy/docker/probe-artifact.sh SHA256"
 require_docker
 for name in $(cluster_workers); do
   owned_container "$name"

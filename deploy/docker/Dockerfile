@@ -32,7 +32,7 @@ RUN --mount=type=cache,id=tm-uv-cache,target=/root/.cache/uv \
     UV_CONCURRENT_DOWNLOADS=2 \
     uv sync --locked --no-dev --no-editable
 COPY bots/ ./bots/
-COPY deploy/entrypoint.sh /usr/local/bin/tm-entrypoint
+COPY deploy/docker/entrypoint.sh /usr/local/bin/tm-entrypoint
 RUN chmod 755 /usr/local/bin/tm-entrypoint
 ENTRYPOINT ["/usr/local/bin/tm-entrypoint"]
 CMD ["coordinator"]

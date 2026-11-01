@@ -5,7 +5,7 @@
 # /ready, /workers, el torneo y el estado de los contenedores; después se aplica
 # el procedimiento de recuperación de deploy/OPERATIONS.md. Se exige solo lo
 # que es garantía: tras recuperar, el torneo termina con un resultado por partida.
-source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 scenario_start head-loss
 observe="${TM_OBSERVE_SECONDS:-90}"
 register slow-1 bots/slow.py

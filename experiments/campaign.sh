@@ -3,9 +3,9 @@
 # cada ejecución. Escenarios clave (worker muerto, partición, carga): 5; resto: 3.
 # Uso: bash experiments/campaign.sh [docker|local]
 #   TM_CAMPAIGN_KEY_REPS / TM_CAMPAIGN_REPS cambian las repeticiones (local: 1 y 1).
-# Arranca el clúster (scripts/start-cluster.sh o scripts/local-cluster.sh), lo
+# Arranca el clúster (deploy/docker/start-cluster.sh o deploy/local/local-cluster.sh), lo
 # para al final y deja un registro experiments/results/campaign-<modo>-<fecha>.log;
-# el resumen lo da: python experiments/summarize.py <ese registro>.
+# el resumen lo da: python experiments/tools/summarize.py <ese registro>.
 set -uo pipefail
 cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
 mode="${1:-docker}"
@@ -21,11 +21,11 @@ git diff HEAD -- src > "${log%.log}.src.diff" 2>/dev/null || true
 
 cluster() {  # (re)arranca el clúster con las variables dadas
   if [[ $mode == docker ]]; then
-    MSYS_NO_PATHCONV=1 bash scripts/stop-cluster.sh >/dev/null 2>&1
-    env MSYS_NO_PATHCONV=1 TM_BACKEND=ray "$@" bash scripts/start-cluster.sh >/dev/null 2>&1
+    MSYS_NO_PATHCONV=1 bash deploy/docker/stop-cluster.sh >/dev/null 2>&1
+    env MSYS_NO_PATHCONV=1 TM_BACKEND=ray "$@" bash deploy/docker/start-cluster.sh >/dev/null 2>&1
   else
-    bash scripts/local-cluster.sh stop >/dev/null 2>&1
-    env "$@" bash scripts/local-cluster.sh start >/dev/null 2>&1
+    bash deploy/local/local-cluster.sh stop >/dev/null 2>&1
+    env "$@" bash deploy/local/local-cluster.sh start >/dev/null 2>&1
   fi || { echo "ARRANQUE FALLIDO $*" | tee -a "$log"; exit 1; }
   echo "cluster $* $(date +%T)" | tee -a "$log"
 }
@@ -45,8 +45,8 @@ NIM=(--mix round_robin:16x1,elimination:8x2 --bot optimal)
 cluster
 run "$key" bash "$S/worker-loss.sh"
 [[ $mode == docker ]] && run "$key" bash "$S/worker-partition.sh"
-run "$key" bash experiments/load/run.sh carga-lenta "${SLOW[@]}"
-run "$key" bash experiments/load/run.sh carga-nim "${NIM[@]}"
+run "$key" bash experiments/scenarios/load.sh carga-lenta "${SLOW[@]}"
+run "$key" bash experiments/scenarios/load.sh carga-nim "${NIM[@]}"
 run "$rest" bash "$S/late-result.sh"
 run "$rest" bash "$S/cancelled-tournament.sh"
 run "$rest" bash "$S/faulty-bot.sh"
@@ -55,7 +55,7 @@ run "$rest" TM_PAUSE_SECONDS=40 bash "$S/worker-pause.sh"
 run "$rest" bash "$S/coordinator-restart.sh"
 run "$rest" bash "$S/head-loss.sh"
 cluster TM_MAX_ACTIVE_TOURNAMENTS=3
-run "$key" bash experiments/load/run.sh saturacion --mix elimination:4x6 --bot slow --piles "[5,5,5]"
-if [[ $mode == docker ]]; then MSYS_NO_PATHCONV=1 bash scripts/stop-cluster.sh >/dev/null 2>&1
-else bash scripts/local-cluster.sh stop >/dev/null 2>&1; fi
+run "$key" bash experiments/scenarios/load.sh saturacion --mix elimination:4x6 --bot slow --piles "[5,5,5]"
+if [[ $mode == docker ]]; then MSYS_NO_PATHCONV=1 bash deploy/docker/stop-cluster.sh >/dev/null 2>&1
+else bash deploy/local/local-cluster.sh stop >/dev/null 2>&1; fi
 echo "fin $(date +%T)" | tee -a "$log"

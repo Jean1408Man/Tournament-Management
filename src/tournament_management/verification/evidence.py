@@ -1,4 +1,4 @@
-"""Lectura de la carpeta que guarda dump() en experiments/scenarios/lib.sh.
+"""Lectura de la carpeta que guarda dump() en experiments/tools/lib.sh.
 
 Por torneo <t>, todo obtenido por HTTP (E2.2):
   <t>.tournament.json  GET /api/v1/tournaments/<t>

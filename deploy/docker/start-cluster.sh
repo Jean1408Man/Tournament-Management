@@ -16,7 +16,7 @@ fi
 [[ "$TM_INTERNAL_TOKEN" =~ ^[A-Za-z0-9]{16,}$ ]] ||
   die "TM_INTERNAL_TOKEN debe tener al menos 16 letras o números."
 image_id="$(docker image inspect --format '{{.Id}}' "$TM_IMAGE")" ||
-  die "Imagen local ausente. Ejecuta bash scripts/build-image.sh."
+  die "Imagen local ausente. Ejecuta bash deploy/docker/build-image.sh."
 for name in "${TM_CONTAINERS[@]}"; do
   if docker container inspect "$name" >/dev/null 2>&1; then
     die "Ya existe $name. Revisa el clúster y usa stop-cluster.sh antes de recrearlo."
