@@ -1,4 +1,4 @@
-# Contrato HTTP v1 — etapas 3.3–3.4
+# Contrato HTTP v1
 
 Contrato de máquina: [openapi-v1.json](openapi-v1.json).
 La aplicación publica el mismo documento en `/api/v1/openapi.json` y su interfaz
@@ -21,7 +21,8 @@ Todas las rutas de esta tabla usan el prefijo `/api/v1`.
 | GET /workers | 200; identidades y capacidad observadas por el backend configurado |
 
 `/health` indica vida del proceso. `/ready` comprueba disco escribible,
-PostgreSQL con las tres migraciones y coordinador local operativo. 
+PostgreSQL con las tres migraciones y coordinador operativo; responde 503 si
+falla alguna. Con Ray, la falta de workers no lo cambia: se ve en `/workers`.
 
 ## Registro e idempotencia
 
@@ -48,8 +49,9 @@ Los IDs públicos admiten 1–100 caracteres ASCII: primero alfanumérico, resto
 alfanumérico, guion o guion bajo. Se resuelven los hashes desde el registro;
 el cliente no envía comandos ni sustituye artefactos al crear el torneo.
 
-202 significa que el commit ya ocurrió. La ejecución avanza después en una
-cola local FIFO, con un intento a la vez. La consulta de estado puede mostrar
+202 significa que el commit ya ocurrió. La ejecución avanza después en el
+coordinador, que juega varias partidas a la vez y reparte los turnos entre los
+torneos en curso. La consulta de estado puede mostrar
 `running`, `completed`, `blocked` o `cancelled`. En eliminación, `bracket`
 contiene las rondas materializadas con sus parejas; los byes no son partidas.
 En round-robin, `standings` contiene las victorias y el desempate por orden
@@ -99,13 +101,13 @@ subidos. Los detalles precisos de campos y tipos están en OpenAPI.
 
 Usar un solo proceso coordinador activo por base. La confirmación de resultados
 precede al acuse al backend; si falla la persistencia, el coordinador deja de
-admitir nuevas creaciones y /ready responde 503. El backend local expone su
-worker propio; el backend Ray aún devuelve una lista vacía y no admite crear
-torneos. No se confunde membresía Ray con capacidad de ejecutar partidas.
+admitir nuevas creaciones y /ready responde 503. `/workers` muestra cada worker
+con su estado de membresía propio (`available`, `suspected` o `lost`); no se
+confunde membresía Ray con capacidad de ejecutar partidas.
 
-## Recuperación al arrancar 
+## Recuperación al arrancar
 
-El arranque local enumera los torneos running con definición durable, en orden
+El arranque del coordinador enumera los torneos running con definición durable, en orden
 de creación e ID, y toma brevemente el bloqueo de cada torneo. Marca como lost
 los intentos activos de la ejecución anterior y libera su referencia vigente.
 Registra `attempt.lost` con detalle `coordinator_restart` en esa misma transacción.
