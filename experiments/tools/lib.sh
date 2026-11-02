@@ -178,7 +178,7 @@ fi
 LOCAL_CLUSTER="bash deploy/local/local-cluster.sh"
 LOCAL_HOME="${TM_LOCAL_HOME:-$HOME/.local/share/tournament-management}"
 LOCAL_DB="postgresql:///tournament_management?host=$LOCAL_HOME/run&port=${TM_LOCAL_PG_PORT:-5433}&user=tm"
-LOCAL_PY="${TM_VENV:-$PROJECT_DIR/.venv}/bin/python"
+LOCAL_PY="${TM_VENV:-${UV_PROJECT_ENVIRONMENT:-$PROJECT_DIR/.venv}}/bin/python"
 
 local_alive() { [[ -f "$LOCAL_HOME/run/$1.pid" ]] && kill -0 "$(cat "$LOCAL_HOME/run/$1.pid")" 2>/dev/null; }
 

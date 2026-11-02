@@ -118,6 +118,3 @@ Los seis escenarios y su evidencia: [experiments/scenarios/README.md](../experim
 
 Los datos de cada modo son independientes: un bot o un torneo creado en Docker
 no aparece en el modo local, ni al revés.
-
-Más detalle de operación (pérdida del head, plazos, membresía, artefactos):
-[OPERATIONS.md](OPERATIONS.md).

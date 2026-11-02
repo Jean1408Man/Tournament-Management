@@ -2,7 +2,7 @@
 
 Todo lo necesario para levantar el sistema, con Docker o sin él. Guías:
 [ARRANQUE.md](ARRANQUE.md) (puesta en marcha) y [OPERATIONS.md](OPERATIONS.md)
-(operación y recuperación). Compose está prohibido por el encargo.
+(operación y recuperación). 
 
 ## `docker/` — clúster de contenedores
 

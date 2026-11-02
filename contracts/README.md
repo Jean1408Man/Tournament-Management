@@ -1,6 +1,6 @@
 # Contrato HTTP v1 — etapas 3.3–3.4
 
-Contrato de máquina: [openapi-v1.json](openapi-v1.json), versión 1.1.0 (1.1.0 añade la respuesta 429 de 5.1; ampliación compatible).
+Contrato de máquina: [openapi-v1.json](openapi-v1.json).
 La aplicación publica el mismo documento en `/api/v1/openapi.json` y su interfaz
 en `/docs`. Regenerar con `uv run python contracts/export-openapi.py` y verificar
 con `uv run pytest tests/unit/test_api_contract.py -q`. No requiere servidor ni BD.
@@ -21,9 +21,7 @@ Todas las rutas de esta tabla usan el prefijo `/api/v1`.
 | GET /workers | 200; identidades y capacidad observadas por el backend configurado |
 
 `/health` indica vida del proceso. `/ready` comprueba disco escribible,
-PostgreSQL con las tres migraciones y coordinador local operativo. Devuelve
-503 cuando alguna condición no se cumple; con backend Ray la ejecución aún
-figura como no implementada.
+PostgreSQL con las tres migraciones y coordinador local operativo. 
 
 ## Registro e idempotencia
 
@@ -99,16 +97,13 @@ subidos. Los detalles precisos de campos y tipos están en OpenAPI.
 | 429 | `POST /tournaments` con `TM_MAX_ACTIVE_TOURNAMENTS` torneos en curso (code `overloaded`). Lleva `Retry-After` (s); no guarda nada ni consume la `Idempotency-Key`. Repetir la clave de un torneo ya admitido sigue dando 202 |
 | 503 | Base, artefacto o ejecución no disponibles |
 
-Usar un solo proceso coordinador activo por base. Desde 3.4 el arranque
-reconstruye la cola antes de atender HTTP. La confirmación de resultados
+Usar un solo proceso coordinador activo por base. La confirmación de resultados
 precede al acuse al backend; si falla la persistencia, el coordinador deja de
 admitir nuevas creaciones y /ready responde 503. El backend local expone su
 worker propio; el backend Ray aún devuelve una lista vacía y no admite crear
 torneos. No se confunde membresía Ray con capacidad de ejecutar partidas.
 
-Recorrido completo: [ejemplos HTTP](../examples/api/README.md).
-
-## Recuperación al arrancar (3.4)
+## Recuperación al arrancar 
 
 El arranque local enumera los torneos running con definición durable, en orden
 de creación e ID, y toma brevemente el bloqueo de cada torneo. Marca como lost

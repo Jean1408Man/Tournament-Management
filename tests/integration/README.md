@@ -3,7 +3,7 @@
 Pruebas con procesos, PostgreSQL y adaptadores reales; incorporarlas al implementar
 cada componente. Las pruebas Ray deberán declarar sus requisitos de clúster.
 
-## PostgreSQL (etapa 3.1)
+## PostgreSQL
 
 `uv run pytest tests/integration/test_postgres_persistence.py -q` verifica
 transacciones, carreras, avance deportivo y migraciones contra una base real.
@@ -15,9 +15,7 @@ También admite `TM_TEST_DATABASE_URL` para una BD de pruebas con permiso CREATE
 SCHEMA. Cada prueba crea y elimina su propio esquema. No usa `TM_DATABASE_URL`
 ni las credenciales de desarrollo. CI proporciona PostgreSQL 16 explícitamente.
 
-El [informe de 3.1](<../../docs/Fase 3 Reportes/PHASE3_1-REPORT.md>) explica las garantías y los límites.
-
-## Registro de bots (etapa 3.2)
+## Registro de bots
 
 `uv run pytest tests/integration/test_bot_registry.py -q` comprueba el registro
 con PostgreSQL y archivos reales: recuperación desde otra instancia y desde otro
@@ -26,7 +24,7 @@ de publicación/commit. Se aplican los mismos requisitos PostgreSQL anteriores.
 Las pruebas de despliegue usan dobles de Docker para comprobar los montajes;
 la comprobación manual del clúster real es `bash deploy/docker/probe-artifact.sh HASH`.
 
-## API durable (etapa 3.3)
+## API durable 
 
 `uv run pytest tests/integration/api -q` levanta Uvicorn en un puerto temporal
 con PostgreSQL real y almacenamiento temporal. El cliente usa HTTP estándar;
@@ -43,7 +41,7 @@ observar el orden entre commit, acuse y cancelación.
 `uv run pytest tests/unit/test_api_contract.py -q` comprueba que el OpenAPI
 publicado coincide con `contracts/openapi-v1.json`, sin requerir PostgreSQL.
 
-## Recuperación (etapa 3.4)
+## Recuperación 
 
 `uv run pytest tests/integration/recovery -q` comprueba pérdida de intentos,
 presupuesto que no se reinicia, conservación de resultados y próximos cruces,

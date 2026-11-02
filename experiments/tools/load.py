@@ -313,7 +313,7 @@ def main():
     parser.add_argument("--api", default="http://127.0.0.1:8000")
     parser.add_argument("--out", required=True)
     parser.add_argument("--mix", default="round_robin:6x1,elimination:4x3")
-    parser.add_argument("--bot", default="slow", help="bots/<bot>.py para todos")
+    parser.add_argument("--bot", default="slow", help="bots/<bot>.py; varios con comas")
     parser.add_argument("--piles", default="[10,10,10]")
     parser.add_argument("--prefix", default=time.strftime("load-%Y%m%d-%H%M%S"))
     parser.add_argument("--timeout", type=int, default=1800, help="segundos máximos")
@@ -322,10 +322,13 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     mix = parse_mix(args.mix)
     client = Client(args.api, out)
-    source = (ROOT / "bots" / f"{args.bot}.py").read_bytes()
-    competitors = [f"{args.bot}-{i:02d}" for i in range(1, max(n for _, n in mix) + 1)]
-    for competitor in competitors:
-        client.register(competitor, source)
+    # Varios bots separados por comas se reparten por turnos entre los participantes.
+    bots = args.bot.split(",")
+    competitors = []
+    for i in range(max(n for _, n in mix)):
+        bot = bots[i % len(bots)]
+        competitors.append(f"{bot.replace('/', '-')}-{i + 1:02d}")
+        client.register(competitors[-1], (ROOT / "bots" / f"{bot}.py").read_bytes())
     deadline = time.monotonic() + args.timeout
     stop = threading.Event()
     sampler = threading.Thread(target=sample_workers, args=(args.api, out, stop), daemon=True)

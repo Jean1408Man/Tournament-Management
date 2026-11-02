@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel del clúster</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #11161f; --card: #161c27; --card2: #1c2433; --line: #283244;
+    --text: #e6ebf5; --muted: #8b97ad; --accent: #7c8cff; --accent2: #36d0c4;
+    --ok: #3ccf8e; --warn: #f5b84b; --bad: #ff6b6b; --info: #5aa9ff;
+    --shadow: 0 8px 24px rgba(0, 0, 0, .35); --term: #0a0e14;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #eef1f7; --bg2: #e6eaf3; --card: #ffffff; --card2: #f5f7fb; --line: #dde3ee;
+      --text: #1b2333; --muted: #64708a; --accent: #5160f0; --accent2: #0fa79b;
+      --ok: #16a36a; --warn: #c98512; --bad: #d94848; --info: #2c7be5;
+      --shadow: 0 6px 18px rgba(30, 40, 70, .08); --term: #10151f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--text); font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+         background: radial-gradient(1200px 600px at 10% -10%, rgba(124,140,255,.16), transparent),
+                     radial-gradient(900px 500px at 100% 0%, rgba(54,208,196,.12), transparent),
+                     var(--bg); min-height: 100vh; }
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 22px; flex-wrap: wrap; }
+  .logo { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+          background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+          font-weight: 800; box-shadow: var(--shadow); }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  .pill { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+          background: var(--card2); border: 1px solid var(--line); color: var(--muted); }
+  .pill.mode { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .live { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
+         box-shadow: 0 0 0 0 rgba(60,207,142,.6); animation: pulse 2s infinite; }
+  .dot.off { background: var(--bad); animation: none; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(60,207,142,0); } 100% { box-shadow: 0 0 0 0 rgba(60,207,142,0); } }
+  .banner { margin: 0 22px 12px; padding: 10px 14px; border-radius: 10px; font-weight: 600;
+            background: color-mix(in srgb, var(--warn) 16%, var(--card)); color: var(--warn);
+            border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+  .kpis { display: grid; gap: 12px; padding: 0 22px 12px;
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+         padding: 12px 14px; box-shadow: var(--shadow); }
+  .kpi b { display: block; font-size: 24px; line-height: 1.1; margin-top: 4px; }
+  .kpi span { color: var(--muted); font-size: 12px; }
+  main { display: grid; gap: 14px; padding: 0 22px 22px;
+         grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+            box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+  .w4 { grid-column: span 4; } .w5 { grid-column: span 5; } .w7 { grid-column: span 7; }
+  .w8 { grid-column: span 8; } .w12 { grid-column: span 12; }
+  .tall { height: 380px; }
+  @media (max-width: 1100px) { .w4, .w5, .w7, .w8 { grid-column: span 12; } }
+  section > h2 { font-size: 14px; margin: 0; padding: 12px 16px; display: flex; gap: 10px;
+                 align-items: center; border-bottom: 1px solid var(--line); }
+  section > h2 small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  section > h2 .right { margin-left: auto; display: flex; gap: 6px; }
+  .body { overflow: auto; flex: 1; padding: 10px 12px; }
+  .empty { color: var(--muted); padding: 14px 6px; text-align: center; }
+  .error { color: var(--bad); padding: 10px 6px; }
+  .mono { font-family: "Cascadia Code", ui-monospace, Consolas, monospace; font-size: 12px; }
+  .muted { color: var(--muted); }
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; font-size: 11px;
+           font-weight: 700; border-radius: 999px; text-transform: lowercase; white-space: nowrap;
+           background: color-mix(in srgb, var(--c, var(--muted)) 16%, transparent);
+           color: var(--c, var(--muted)); }
+  .s-ok { --c: var(--ok); } .s-warn { --c: var(--warn); } .s-bad { --c: var(--bad); }
+  .s-info { --c: var(--info); } .s-muted { --c: var(--muted); } .s-accent { --c: var(--accent); }
+  /* Workers */
+  .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .tile { background: var(--card2); border: 1px solid var(--line); border-radius: 12px;
+          padding: 10px 12px; cursor: pointer; transition: transform .15s, border-color .15s; }
+  .tile:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .tile.selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .tile.down { opacity: .55; }
+  .tile.suspected { animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { border-color: var(--warn); } }
+  .tile .name { font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+  .bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 8px; }
+  .bar i { display: block; height: 100%; border-radius: 99px;
+           background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .4s; }
+  .tile small { color: var(--muted); display: block; margin-top: 5px; }
+  /* Listas */
+  .row { display: grid; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 10px;
+         border: 1px solid transparent; }
+  .row + .row { margin-top: 4px; }
+  .row.click { cursor: pointer; }
+  .row.click:hover { background: var(--card2); }
+  .row.selected { background: var(--card2); border-color: var(--accent); }
+  .t-row { grid-template-columns: minmax(0, 1fr) 90px; }
+  .t-row .meta { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; margin-top: 5px; }
+  .a-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto; }
+  .vs { font-weight: 600; }
+  .clock { font-variant-numeric: tabular-nums; color: var(--muted); }
+  /* Eventos */
+  .timeline { position: relative; padding-left: 8px; }
+  .ev { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: start; padding: 5px 0; }
+  .ev .ic { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+            font-size: 11px; font-weight: 800; color: #fff; background: var(--c, var(--muted)); }
+  .ev .ty { font-weight: 600; }
+  .ev .de { color: var(--muted); font-size: 12px; }
+  /* Terminales */
+  .term { background: var(--term); color: #d5deef; border-radius: 10px; margin: 10px 12px 12px;
+          padding: 10px 12px; overflow: auto; flex: 1; font-family: "Cascadia Code", ui-monospace, Consolas, monospace;
+          font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .log-WARNING { color: #f5c46b; } .log-ERROR, .log-CRITICAL { color: #ff8080; } .log-DEBUG { color: #7d8aa3; }
+  .ok-line { color: #6ee7a8; } .bad-line { color: #ff8a8a; }
+  select, input, button { font: inherit; color: var(--text); background: var(--card2);
+                          border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; }
+  input[type=number] { width: 70px; }
+  button { cursor: pointer; font-weight: 600; transition: all .15s; }
+  button.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: 0; }
+  button.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
+  button:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+  button:disabled { opacity: .45; cursor: default; transform: none; }
+  /* Órdenes */
+  .tabs { display: flex; gap: 6px; padding: 10px 12px 0; flex-wrap: wrap; }
+  .tab { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+  .tab.active { color: var(--text); border-color: var(--accent); background: var(--card2); }
+  .cards { display: grid; gap: 10px; padding: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .cmd { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+         display: flex; flex-direction: column; gap: 8px; }
+  .cmd h3 { margin: 0; font-size: 13px; }
+  .cmd p { margin: 0; color: var(--muted); font-size: 12px; flex: 1; }
+  .cmd .act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .form { display: grid; gap: 10px; padding: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .form label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); cursor: pointer;
+          font-size: 12px; user-select: none; background: var(--card2); }
+  .chip.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--card2)); }
+  .runhead { display: flex; align-items: center; gap: 10px; padding: 0 12px; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line);
+             border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 600px) { header, .kpis, main { padding-left: 12px; padding-right: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">TM</div>
+  <h1>Panel del clúster</h1>
+  <span class="pill mode" id="mode">…</span>
+  <span class="pill mono" id="api"></span>
+  <span class="live"><span class="dot" id="dot"></span><span id="status">conectando…</span></span>
+</header>
+<div class="banner" id="banner" hidden></div>
+<div class="kpis">
+  <div class="kpi"><span>Workers disponibles</span><b id="k-workers">–</b></div>
+  <div class="kpi"><span>Ocupación</span><b id="k-busy">–</b></div>
+  <div class="kpi"><span>Torneos activos</span><b id="k-active">–</b></div>
+  <div class="kpi"><span>Partidas en curso</span><b id="k-running">–</b></div>
+  <div class="kpi"><span>Reintentos (torneos listados)</span><b id="k-retries">–</b></div>
+</div>
+<main>
+  <section class="w5 tall">
+    <h2>Workers <small>elige uno para ver su log</small></h2>
+    <div class="body"><div class="tiles" id="workers"></div></div>
+  </section>
+  <section class="w7 tall">
+    <h2>Torneos <small>activos y últimos 10 terminados · elige uno para ver sus eventos</small></h2>
+    <div class="body" id="tournaments"></div>
+  </section>
+  <section class="w7 tall">
+    <h2>Partidas en ejecución <small id="attempts-note"></small></h2>
+    <div class="body" id="attempts"></div>
+  </section>
+  <section class="w5 tall">
+    <h2>Eventos <small id="events-title">ningún torneo elegido</small></h2>
+    <div class="body" id="events-box"><div class="timeline" id="events"></div></div>
+  </section>
+  <section class="w12 tall">
+    <h2>Logs
+      <span class="right">
+        <select id="log-source" title="origen"></select>
+        <select id="log-level" title="nivel mínimo">
+          <option value="0">todo</option><option value="20">INFO y más</option>
+          <option value="30">WARNING y más</option><option value="40">solo ERROR</option>
+        </select>
+      </span>
+    </h2>
+    <div class="term" id="logs"></div>
+  </section>
+  <section class="w12">
+    <h2>Ejecuciones <small>una a la vez · manual en ui/README.md</small></h2>
+    <div class="tabs" id="tabs"></div>
+    <div id="commands"></div>
+    <div class="runhead" id="run-head"><span class="muted">Sin ejecuciones.</span></div>
+    <div class="term" id="run-output" style="min-height: 180px; max-height: 420px"></div>
+  </section>
+</main>
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("token") || "";
+const $ = (id) => document.getElementById(id);
+const withToken = (p) => p + (p.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+let meta = null, metaKey = "", busy = false, activeTab = null;
+let selectedTournament = null, eventsSource = null, logsSource = null, runSource = null;
+const tournamentForm = { format: "round_robin", size: 4, bots: ["optimal", "random_bot"], piles: "5,5,5" };
+
+async function getJSON(path) {
+  const response = await fetch(path, { headers: { "X-TM-UI-Token": token } });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || response.status);
+  return body;
+}
+
+function el(tag, text, cls, attrs) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  if (cls) node.className = cls;
+  Object.assign(node, attrs || {});
+  return node;
+}
+
+const tone = { available: "s-ok", running: "s-info", completed: "s-ok", suspected: "s-warn",
+  created: "s-muted", queued: "s-muted", lost: "s-bad", blocked: "s-bad", cancelled: "s-warn",
+  "caído": "s-bad" };
+const badge = (text) => el("span", text, "badge " + (tone[text] || "s-muted"));
+
+function showError(target, error) {
+  $(target).replaceChildren(el("div", "No disponible: " + error.message, "error"));
+}
+
+// --- Workers ---
+async function refreshWorkers() {
+  try {
+    const live = await getJSON("/api/workers");
+    const byName = new Map(live.map((w) => [w.worker_id, w]));
+    const down = ((meta && meta.workers) || []).filter((w) => !w.up && !byName.has(w.name));
+    const box = $("workers");
+    box.replaceChildren();
+    const busyN = live.reduce((n, w) => n + w.running_attempts, 0);
+    const slots = live.reduce((n, w) => n + w.capacity, 0);
+    $("k-workers").textContent = `${live.filter((w) => w.status === "available").length} / ${live.length}`;
+    $("k-busy").textContent = slots ? `${Math.round((100 * busyN) / slots)} %` : "–";
+    [...live.map((w) => ({ name: w.worker_id, status: w.status, used: w.running_attempts, cap: w.capacity })),
+     ...down.map((w) => ({ name: w.name, status: "caído", used: 0, cap: 1 }))].forEach((w) => {
+      const tile = el("div", null, "tile" + (w.status === "caído" || w.status === "lost" ? " down" : "")
+        + (w.status === "suspected" ? " suspected" : "") + ($("log-source").value === w.name ? " selected" : ""));
+      const name = el("div", null, "name");
+      name.append(el("span", w.name, "mono"), badge(w.status));
+      const bar = el("div", null, "bar"), fill = el("i");
+      fill.style.width = `${w.cap ? (100 * w.used) / w.cap : 0}%`;
+      bar.append(fill);
+      tile.append(name, bar, el("small", `${w.used} de ${w.cap} partida(s)`));
+      tile.onclick = () => chooseLog(w.name);
+      box.append(tile);
+    });
+    if (!box.children.length) box.append(el("div", "Ningún worker.", "empty"));
+  } catch (error) { showError("workers", error); }
+}
+
+// --- Torneos ---
+async function refreshTournaments() {
+  try {
+    const items = await getJSON("/api/tournaments");
+    $("k-active").textContent = items.filter((t) => t.active).length;
+    $("k-retries").textContent = items.reduce((n, t) => n + t.retries, 0);
+    const box = $("tournaments");
+    box.replaceChildren();
+    if (!items.length) { box.append(el("div", "Todavía no hay torneos.", "empty")); return; }
+    items.forEach((t) => {
+      const m = t.matches, total = Object.values(m).reduce((a, b) => a + b, 0), done = m.completed || 0;
+      const row = el("div", null, "row click t-row" + (t.tournament_id === selectedTournament ? " selected" : ""));
+      const left = el("div");
+      left.append(el("div", t.tournament_id, "mono"));
+      const info = el("div", null, "meta");
+      info.append(el("span", `${t.participants} bots`), el("span", `${done}/${total} partidas`));
+      if (m.running) info.append(el("span", `${m.running} en curso`, "badge s-info"));
+      if (t.retries) info.append(el("span", `${t.retries} reintento(s)`, "badge s-warn"));
+      const bar = el("div", null, "bar"), fill = el("i");
+      fill.style.width = `${total ? (100 * done) / total : 0}%`;
+      bar.append(fill);
+      left.append(info, bar);
+      const right = el("div");
+      right.style.textAlign = "right";
+      right.append(badge(t.state));
+      row.append(left, right);
+      row.onclick = () => chooseTournament(t.tournament_id);
+      box.append(row);
+    });
+  } catch (error) { showError("tournaments", error); }
+}
+
+// --- Partidas en ejecución ---
+async function refreshAttempts() {
+  try {
+    const items = await getJSON("/api/attempts");
+    $("k-running").textContent = items.length;
+    $("attempts-note").textContent = items.length ? `${items.length} intento(s)` : "";
+    const box = $("attempts");
+    box.replaceChildren();
+    if (!items.length) { box.append(el("div", "Ninguna partida en marcha.", "empty")); return; }
+    items.forEach((a) => {
+      const row = el("div", null, "row click a-row");
+      const who = el("div");
+      who.append(el("div", (a.competitors || []).join("  vs  "), "vs"),
+                 el("div", `${a.tournament_id} · ${a.match_id.slice(0, 8)}`, "mono muted"));
+      const where = el("div");
+      where.append(a.worker ? el("span", a.worker, "badge s-accent") : el("span", "en cola", "badge s-muted"));
+      const gen = a.generation > 1 ? el("span", `reintento ${a.generation}`, "badge s-warn")
+                                   : el("span", "gen. 1", "badge s-muted");
+      row.append(who, where, gen, el("span", `${a.seconds} s`, "clock"));
+      row.onclick = () => chooseTournament(a.tournament_id);
+      box.append(row);
+    });
+  } catch (error) { showError("attempts", error); }
+}
+
+// --- Eventos ---
+function eventStyle(type) {
+  if (/failed|lost|blocked|discarded|rejected/.test(type)) return ["✕", "var(--bad)"];
+  if (/cancel/.test(type)) return ["⊘", "var(--warn)"];
+  if (/accepted|completed/.test(type)) return ["✓", "var(--ok)"];
+  if (/dispatched/.test(type)) return ["→", "var(--accent)"];
+  if (/issued|created/.test(type)) return ["+", "var(--info)"];
+  return ["•", "var(--muted)"];
+}
+
+function chooseTournament(id) {
+  selectedTournament = id;
+  $("events-title").textContent = id;
+  $("events").replaceChildren();
+  if (eventsSource) eventsSource.close();
+  eventsSource = new EventSource(withToken("/api/events?tournament=" + encodeURIComponent(id)));
+  eventsSource.onmessage = (message) => {
+    const e = JSON.parse(message.data), [icon, color] = eventStyle(e.event_type);
+    const row = el("div", null, "ev"), ic = el("div", icon, "ic"), txt = el("div");
+    ic.style.setProperty("--c", color);
+    txt.append(el("div", e.event_type, "ty"));
+    if (e.detail && e.detail !== e.event_type) txt.append(el("div", e.detail, "de mono"));
+    row.append(ic, txt, el("span", `#${e.sequence} · ${(e.occurred_at || "").slice(11, 19)}`, "mono muted"));
+    $("events").append(row);
+    while ($("events").children.length > 500) $("events").firstChild.remove();
+    $("events-box").scrollTop = $("events-box").scrollHeight;
+  };
+  refreshTournaments();
+}
+
+// --- Logs ---
+const levels = { DEBUG: 10, INFO: 20, WARNING: 30, ERROR: 40, CRITICAL: 50 };
+
+function chooseLog(source) {
+  if (!source) return;
+  $("log-source").value = source;
+  $("logs").replaceChildren();
+  if (logsSource) logsSource.close();
+  logsSource = new EventSource(withToken("/api/logs?source=" + encodeURIComponent(source)));
+  logsSource.onmessage = (message) => {
+    const raw = JSON.parse(message.data);
+    let text = raw, level = "INFO";
+    try {
+      const j = JSON.parse(raw);
+      level = j.level || level;
+      const ids = ["tournament_id", "attempt_id", "worker_id"].filter((k) => j[k])
+        .map((k) => `${k.split("_")[0]}=${j[k]}`).join(" ");
+      text = `${(j.timestamp || "").slice(11, 19)} ${level.padEnd(7)} ${j.logger}: ${j.message}`
+        + (ids ? `  [${ids}]` : "") + (j.exception ? "\n" + j.exception : "");
+    } catch { /* línea que no es JSON (Ray, Uvicorn al arrancar…) */ }
+    const box = $("logs"), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    const line = el("div", text, "log-" + level);
+    line.dataset.level = levels[level] || 20;
+    line.hidden = Number(line.dataset.level) < Number($("log-level").value);
+    box.append(line);
+    while (box.children.length > 2000) box.firstChild.remove();
+    if (atEnd) box.scrollTop = box.scrollHeight;
+  };
+  refreshWorkers();
+}
+
+$("log-source").onchange = () => chooseLog($("log-source").value);
+$("log-level").onchange = () => {
+  const min = Number($("log-level").value);
+  for (const line of $("logs").children) line.hidden = Number(line.dataset.level) < min;
+};
+
+// --- Órdenes ---
+function argInput(c) {
+  const select = el("select");
+  const workers = meta.workers || [];
+  if (c.arg === "worker-next") {
+    if (meta.next_worker) select.append(new Option(meta.next_worker, meta.next_worker));
+  } else if (c.arg === "worker-up") {
+    workers.filter((w) => w.up).forEach((w) => select.append(new Option(w.name, w.name)));
+  } else if (c.arg === "worker-down") {
+    workers.filter((w) => !w.up).forEach((w) => select.append(new Option(w.name, w.name)));
+  } else if (c.arg === "results") {
+    meta.results.forEach((r) => select.append(new Option(r.label, r.name)));
+  } else {
+    return null;
+  }
+  return select;
+}
+
+function commandCard(c) {
+  const card = el("div", null, "cmd");
+  card.append(el("h3", c.label), el("p", c.desc));
+  const act = el("div", null, "act"), input = argInput(c);
+  const danger = /stop|fail/.test(c.id);
+  const button = el("button", "Ejecutar", danger ? "danger" : "primary");
+  button.dataset.run = "1";
+  if (input) {
+    act.append(input);
+    if (!input.options.length) {
+      button.disabled = true;
+      button.dataset.empty = "1";
+      act.append(el("span", c.arg === "worker-down" ? "ninguno caído" : "ninguno", "muted"));
+    }
+  }
+  button.onclick = () => runCommand(c, input ? input.value : null);
+  act.append(button);
+  card.append(act);
+  return card;
+}
+
+function tournamentPanel() {
+  const box = el("div", null, "form");
+  const format = el("select");
+  [["round_robin", "Round-robin (todos contra todos)"], ["elimination", "Eliminación"]]
+    .forEach(([v, t]) => format.append(new Option(t, v)));
+  format.value = tournamentForm.format;
+  format.onchange = () => { tournamentForm.format = format.value; };
+  const size = el("input", null, null, { type: "number", min: 2, max: 16, value: tournamentForm.size });
+  size.oninput = () => { tournamentForm.size = Number(size.value); };
+  const piles = el("input", null, "mono", { value: tournamentForm.piles, placeholder: "5,5,5" });
+  piles.oninput = () => { tournamentForm.piles = piles.value; };
+  const chips = el("div", null, "chips");
+  meta.bots.forEach((b) => {
+    const chip = el("span", b, "chip" + (tournamentForm.bots.includes(b) ? " on" : ""));
+    chip.onclick = () => {
+      const i = tournamentForm.bots.indexOf(b);
+      if (i >= 0) tournamentForm.bots.splice(i, 1);
+      else if (tournamentForm.bots.length < 4) tournamentForm.bots.push(b);
+      chip.classList.toggle("on", tournamentForm.bots.includes(b));
+    };
+    chips.append(chip);
+  });
+  const label = (text, node) => { const l = el("label", text); l.append(node); return l; };
+  const go = el("button", "Crear torneo", "primary");
+  go.dataset.run = "1";
+  go.onclick = () => {
+    const pileList = tournamentForm.piles.split(",").map((s) => Number(s.trim()));
+    runCommand({ id: "tournament", label: "Crear torneo" }, {
+      format: tournamentForm.format, size: tournamentForm.size,
+      bots: tournamentForm.bots, piles: pileList,
+    });
+  };
+  const botsLabel = label("Bots (hasta 4; se reparten por turnos entre los participantes)", chips);
+  botsLabel.style.gridColumn = "1 / -1";
+  box.append(label("Formato", format), label("Número de bots (2–16)", size),
+             label("Montones (de 1 a 5, cada uno de 1 a 50)", piles), botsLabel);
+  const actions = el("div", null, "act");
+  actions.append(go, el("span", "Deja la evidencia en experiments/results/load-torneo-…", "muted"));
+  box.append(actions);
+  return box;
+}
+
+function renderCommands() {
+  const groups = {};
+  meta.commands.forEach((c) => (groups[c.group] ||= []).push(c));
+  if (!activeTab || !groups[activeTab]) activeTab = Object.keys(groups)[0];
+  $("tabs").replaceChildren(...Object.keys(groups).map((g) => {
+    const tab = el("button", g, "tab" + (g === activeTab ? " active" : ""));
+    tab.onclick = () => { activeTab = g; renderCommands(); };
+    return tab;
+  }));
+  const items = groups[activeTab];
+  const body = items[0].arg === "tournament" ? tournamentPanel() : el("div", null, "cards");
+  if (items[0].arg !== "tournament") items.forEach((c) => body.append(commandCard(c)));
+  $("commands").replaceChildren(body);
+  setBusy(busy);
+}
+
+function setBusy(value) {
+  busy = value;
+  document.querySelectorAll("button[data-run]").forEach((b) => { b.disabled = value || b.dataset.empty === "1"; });
+}
+
+async function runCommand(command, arg) {
+  const what = typeof arg === "string" && arg ? ` ${arg}` : "";
+  if (/stop|fail/.test(command.id) && !confirm(`¿Ejecutar "${command.label}${what}"?`)) return;
+  const response = await fetch("/api/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-TM-UI-Token": token },
+    body: JSON.stringify({ command: command.id, arg }),
+  });
+  const body = await response.json();
+  if (!response.ok) { alert(body.error || response.status); return; }
+  followRun(body);
+}
+
+function runHead(label, state, extra) {
+  const head = $("run-head");
+  head.replaceChildren();
+  if (state === "running") head.append(el("span", null, "spinner"));
+  head.append(el("b", label));
+  if (state === "running") head.append(el("span", "en marcha", "badge s-info"));
+  else head.append(el("span", `código ${state}`, "badge " + (state === 0 ? "s-ok" : "s-bad")));
+  if (extra) head.append(el("span", extra, "mono muted"));
+}
+
+function followRun(run) {
+  if (!run || !run.id) return;
+  runHead(run.label, "running");
+  $("run-output").replaceChildren();
+  setBusy(true);
+  if (runSource) runSource.close();
+  runSource = new EventSource(withToken("/api/run/stream"));
+  runSource.onmessage = (message) => {
+    const text = JSON.parse(message.data), box = $("run-output");
+    const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    box.append(el("div", text, /\bOK\b/.test(text) ? "ok-line" : /FALLO|Error|error/.test(text) ? "bad-line" : ""));
+    if (atEnd) box.scrollTop = box.scrollHeight;
+  };
+  runSource.addEventListener("done", (message) => {
+    runSource.close();
+    const done = JSON.parse(message.data);
+    if (done.exit_code !== undefined) runHead(run.label, done.exit_code, done.results || "");
+    setBusy(false);
+    loadMeta(false);
+  });
+}
+
+// --- Arranque y refresco ---
+async function loadMeta(first) {
+  try {
+    meta = await getJSON("/api/meta");
+    $("mode").textContent = meta.mode === "docker" ? "modo Docker" : "modo local";
+    $("api").textContent = meta.api;
+    $("banner").hidden = !meta.warning;
+    $("banner").textContent = meta.warning ? "⚠ " + meta.warning : "";
+    const current = $("log-source").value;
+    $("log-source").replaceChildren(...meta.logs.map((s) => new Option(s, s)));
+    if (meta.logs.includes(current)) $("log-source").value = current;
+    const key = JSON.stringify([meta.workers, meta.next_worker, meta.results, meta.commands.length]);
+    if (key !== metaKey) { metaKey = key; renderCommands(); }
+    if (first) {
+      chooseLog(meta.logs.includes("coordinator") ? "coordinator" : meta.logs[0]);
+      const run = await getJSON("/api/run");
+      if (run.id) followRun(run);
+    }
+  } catch (error) {
+    $("banner").hidden = false;
+    $("banner").textContent = "⚠ Sin acceso al panel: " + error.message;
+  }
+}
+
+async function tick() {
+  await Promise.all([refreshWorkers(), refreshTournaments(), refreshAttempts()]);
+  const ok = !document.querySelector(".error");
+  $("dot").classList.toggle("off", !ok);
+  $("status").textContent = (ok ? "en vivo · " : "con errores · ") + new Date().toLocaleTimeString();
+}
+
+loadMeta(true).then(tick);
+setInterval(tick, 2000);
+setInterval(() => loadMeta(false), 5000);
+</script>
+</body>
+</html>

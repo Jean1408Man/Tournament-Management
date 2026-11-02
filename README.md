@@ -144,11 +144,12 @@ hasta el próximo arranque.
 - [docs/api-contract.md](docs/api-contract.md) y [docs/semantics.md](docs/semantics.md): el contrato HTTP congelado.
 - [docs/bot-protocol.md](docs/bot-protocol.md): cómo escribir un bot.
 - [docs/garantias.md](docs/garantias.md): cada garantía con su evidencia.
-- [docs/decisions/](docs/decisions/README.md): las seis decisiones de diseño que más pesan.
-- [docs/campaign/](docs/campaign/README.md): la campaña de fallos y carga.
+- [doc/decisiones.md](doc/decisiones.md): las seis decisiones de diseño que más pesan.
+- [doc/campaign/ejecutar.md](doc/campaign/ejecutar.md) y [doc/campaign/resultados.md](doc/campaign/resultados.md): cómo ejecutar la campaña de fallos y carga, y sus resultados.
 - [docs/middleware-map.md](docs/middleware-map.md): qué aporta Ray y qué sustituye la Fase 2.
 - [deploy/README.md](deploy/README.md) y [deploy/OPERATIONS.md](deploy/OPERATIONS.md): despliegue y operación.
 - [docs/historia-por-pasos.md](docs/historia-por-pasos.md): cómo se construyó, paso a paso.
+- [ui/README.md](ui/README.md): panel web opcional para ver workers, torneos, partidas, eventos y logs, y lanzar escenarios.
 
 ## Desarrollo
 
@@ -169,6 +170,4 @@ Linux: [tests/integration/README.md](tests/integration/README.md).
 
 ## Uso de IA
 
-Pendiente: el formato de declaración de uso de IA exigido por el curso no está en
-el material disponible. Antes de la entrega, añade aquí la declaración con el
-formato oficial.
+Pendiente: el formato de declaración de uso de IA exigido por el curso.

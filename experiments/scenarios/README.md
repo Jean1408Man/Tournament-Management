@@ -3,8 +3,7 @@
 Cada script provoca una situación concreta en el clúster real, comprueba lo que
 debe pasar y termina con código 0 si todo se cumple (1 si algo falla). Sirven
 igual con Docker (`deploy/docker/`) que sin él (`deploy/local/`): detectan el
-modo solos (`TM_SCENARIO_MODE=docker|local` lo fuerza). Informes de la campaña:
-`docs/campaign/`.
+modo solos (`TM_SCENARIO_MODE=docker|local` lo fuerza).
 
 ## Los escenarios
 
@@ -73,8 +72,8 @@ En Git Bash no se exporta `MSYS_NO_PATHCONV` para los escenarios: rompe
 
 - `resumen.txt`: los pasos con su hora y cada comprobación (`OK`/`FALLO`/`INFO`).
 - `<torneo>.tournament.json`, `.matches.json`, `.events.json`: la evidencia final.
-- `client.jsonl`: lo que el cliente creó y vio en vivo (para I6).
-- `verify.json`: el informe de `tm verify` (I1–I6); una violación cuenta como fallo.
+- `client.jsonl`: lo que el cliente creó y vio en vivo.
+- `verify.json`: el informe de `tm verify`; una violación cuenta como fallo.
 - `meta.json`: revisión, configuración (secretos enmascarados), hardware y comando.
 
 ## Configuración
