@@ -29,6 +29,8 @@ class Settings:
     cancel_grace_ms: int = 5000
     suspect_cooldown_ms: int = 45000
     capacity_wait_ms: int = 300000
+    max_running_attempts: int = 64
+    max_active_tournaments: int = 16
     artifact_url: str = ""
     internal_token: str = ""
     artifact_download_timeout_ms: int = 10000
@@ -59,6 +61,8 @@ class Settings:
             "cancel_grace_ms",
             "suspect_cooldown_ms",
             "capacity_wait_ms",
+            "max_running_attempts",
+            "max_active_tournaments",
             "artifact_download_timeout_ms",
         ):
             if getattr(self, name) <= 0:

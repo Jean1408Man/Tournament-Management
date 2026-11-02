@@ -4,7 +4,7 @@
 # intento matando su worker; cuando el reintento ya está aceptado, se inyecta un
 # resultado deportivo válido del intento viejo con el código real de aceptación.
 # Debe quedar result.discarded (stale_attempt) y un único resultado aceptado.
-source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 scenario_start late-result
 register slow-1 bots/slow.py
 register slow-2 bots/slow.py

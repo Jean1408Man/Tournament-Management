@@ -1,6 +1,6 @@
 # Arranque: con Docker o sin Docker
 
-Los dos modos ejecutan lo mismo: API, coordinador, Ray (un head y dos workers) y
+Los dos modos ejecutan lo mismo: API, coordinador, Ray (un head y `TM_WORKERS` workers, 4 por defecto) y
 PostgreSQL, con las partidas en los workers (`TM_BACKEND=ray`). Cambia dónde
 vive cada pieza:
 
@@ -23,11 +23,11 @@ docker pull postgres:16.6-bookworm
 ```
 
 ```bash
-bash scripts/build-image.sh
+bash deploy/docker/build-image.sh
 ```
 
 ```bash
-TM_BACKEND=ray bash scripts/start-cluster.sh
+TM_BACKEND=ray bash deploy/docker/start-cluster.sh
 ```
 
 ```bash
@@ -37,10 +37,10 @@ curl -i http://127.0.0.1:8000/ready
 Parar (los datos se conservan):
 
 ```bash
-bash scripts/stop-cluster.sh
+bash deploy/docker/stop-cluster.sh
 ```
 
-Añadir un worker: `bash scripts/add-worker.sh tm-worker-3`. En Git Bash de
+Añadir un worker: `bash deploy/docker/add-worker.sh tm-worker-3`. En Git Bash de
 Windows, si un script falla con rutas `C:/...` en argumentos de Docker, antepón
 `MSYS_NO_PATHCONV=1` a `start-cluster.sh`.
 
@@ -59,25 +59,25 @@ uv sync --locked --extra dev
 ```
 
 ```bash
-bash scripts/local-cluster.sh start
+bash deploy/local/local-cluster.sh start
 ```
 
 ```bash
-bash scripts/local-cluster.sh status
+bash deploy/local/local-cluster.sh status
 ```
 
 Parar (los datos se conservan) y volver a arrancar:
 
 ```bash
-bash scripts/local-cluster.sh stop
+bash deploy/local/local-cluster.sh stop
 ```
 
 ```bash
-bash scripts/local-cluster.sh start
+bash deploy/local/local-cluster.sh start
 ```
 
-Otros subcomandos: `add-worker N`, `kill|pause|resume|restore NOMBRE` (`head` o
-`tm-worker-N`), `recover` (tras perder el head) y `reset` (borra todos los datos
+Otros subcomandos: `add-worker N`, `kill|pause|resume|restore NOMBRE` (`head`,
+`coordinator` o `tm-worker-N`), `recover` (tras perder el head) y `reset` (borra todos los datos
 locales; pide confirmación). Logs en `~/.local/share/tournament-management/logs/`.
 
 ## Primer torneo (igual en los dos modos)
@@ -113,11 +113,8 @@ Los seis escenarios y su evidencia: [experiments/scenarios/README.md](../experim
 
 ## Cambiar de modo
 
-1. Para el modo actual: `bash scripts/stop-cluster.sh` o `bash scripts/local-cluster.sh stop`.
+1. Para el modo actual: `bash deploy/docker/stop-cluster.sh` o `bash deploy/local/local-cluster.sh stop`.
 2. Arranca el otro con su `start`.
 
 Los datos de cada modo son independientes: un bot o un torneo creado en Docker
 no aparece en el modo local, ni al revés.
-
-Más detalle de operación (pérdida del head, plazos, membresía, artefactos):
-[OPERATIONS.md](OPERATIONS.md).

@@ -36,7 +36,7 @@ Desde la raíz del proyecto y con el entorno ya instalado:
 ```bash
 .venv/bin/ruff check .
 .venv/bin/python -m pytest
-bash -n scripts/probe-cluster.sh
+bash -n deploy/docker/probe-cluster.sh
 .venv/bin/tm probe-cluster --help
 ```
 
@@ -51,9 +51,9 @@ La imagen actual no contiene el nuevo comando. Construir antes de detener
 el clúster: si falla la construcción, el clúster anterior permanece disponible.
 
 ```bash
-bash scripts/build-image.sh
-bash scripts/stop-cluster.sh
-bash scripts/start-cluster.sh
+bash deploy/docker/build-image.sh
+bash deploy/docker/stop-cluster.sh
+bash deploy/docker/start-cluster.sh
 ```
 
 No se cambiaron dependencias ni uv.lock. Docker reutiliza caché, pero la
@@ -67,8 +67,8 @@ Si build o start fallan, detener esta secuencia y compartir la salida.
 ```bash
 mkdir -p experiments/results
 set -o pipefail
-bash scripts/cluster-status.sh
-bash scripts/probe-cluster.sh | tee experiments/results/step16-probe.json
+bash deploy/docker/cluster-status.sh
+bash deploy/docker/probe-cluster.sh | tee experiments/results/step16-probe.json
 echo "Código de salida: $?"
 ```
 
@@ -94,8 +94,8 @@ Esta prueba verifica que no se declara éxito con un worker ausente. No
 demuestra que un torneo continúe, pues aún no hay motor de torneos.
 
 ```bash
-bash scripts/fail-worker.sh tm-worker-2
-bash scripts/probe-cluster.sh
+bash deploy/docker/fail-worker.sh tm-worker-2
+bash deploy/docker/probe-cluster.sh
 echo "Código de salida esperado distinto de cero: $?"
 ```
 
@@ -107,8 +107,8 @@ Restaurar siempre el worker, incluso si el resultado no coincide con lo esperado
 
 ```bash
 docker start tm-worker-2
-bash scripts/cluster-status.sh
-bash scripts/probe-cluster.sh
+bash deploy/docker/cluster-status.sh
+bash deploy/docker/probe-cluster.sh
 ```
 
 Si el worker todavía no se ha registrado, esperar unos segundos y repetir las

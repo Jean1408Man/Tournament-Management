@@ -1,77 +1,65 @@
-"""Vida de un intento: emitir, enviar, esperar y confirmar antes del acuse."""
+"""Vida de un intento paso a paso; el coordinador decide cuándo dar cada paso (5.1).
 
-import threading
-import time
-from collections.abc import Callable
+Órdenes que se conservan desde 3.x: el intento se emite (durable) antes de
+enviarse, un resultado se confirma antes del acuse y un plazo vencido se
+registra antes de pedir la parada física.
+"""
 
 from tournament_management.execution.backend import ExecutionBackend, ExecutionError
 from tournament_management.execution.cancellation import request_stop
-from tournament_management.execution.policy import ExecutionPolicy
 from tournament_management.shared.messages import AttemptOutcome, AttemptSpec, OutcomeKind
 from tournament_management.tournaments.service import (
     PersistentTournamentService,
 )
 
 
-class AttemptRunner:
-    def __init__(
-        self,
-        backend: ExecutionBackend,
-        results: PersistentTournamentService,
-        policy: ExecutionPolicy,
-        stopping: threading.Event,
-    ) -> None:
-        self.backend = backend
-        self.results = results
-        self.policy = policy
-        self.stopping = stopping
+def send(
+    backend: ExecutionBackend,
+    results: PersistentTournamentService,
+    attempt: AttemptSpec,
+    *,
+    retry: bool,
+) -> bool:
+    """Envía un intento ya emitido; False si el envío falló (queda registrado)."""
+    try:
+        backend.submit(attempt)
+    except ExecutionError:
+        results.finish_failure(failure(backend, attempt, "submission_failed"), retry=retry)
+        return False
+    results.dispatched(attempt, backend.worker_of(attempt.attempt_id) or "unassigned")
+    return True
 
-    def run(self, attempt: AttemptSpec, *, retry: bool, cancelled: Callable[[], bool]) -> None:
-        """El coordinador ya emitió el intento bajo su bloqueo de cancelación."""
-        if self.stopping.is_set() or cancelled():
-            return
-        try:
-            self.backend.submit(attempt)
-        except ExecutionError:
-            self.results.finish_failure(self._failure(attempt, "submission_failed"), retry=retry)
-            return
-        self.results.dispatched(attempt, self.backend.worker_of(attempt.attempt_id) or "unassigned")
-        deadline = time.monotonic() + self.policy.attempt_timeout_ms / 1000
-        while not self.stopping.is_set():
-            if cancelled():
-                request_stop(self.backend, attempt.attempt_id)
-                return
-            for outcome in self.backend.poll():
-                if outcome.attempt_id != attempt.attempt_id:
-                    # Un intento expirado puede entregar tarde. La aceptación
-                    # transaccional vuelve a comprobar su generación y vigencia.
-                    self.results.accept(outcome)
-                    self.backend.acknowledge(outcome.attempt_id)
-                    continue
-                if outcome.kind in {OutcomeKind.COMPLETED, OutcomeKind.BOT_FAILURE}:
-                    self.results.accept(outcome)
-                else:
-                    self.results.finish_failure(
-                        outcome,
-                        retry=retry and outcome.kind == OutcomeKind.INFRASTRUCTURE_FAILURE,
-                    )
-                self.backend.acknowledge(outcome.attempt_id)
-                return
-            if time.monotonic() >= deadline:
-                # Invalidación durable antes de cancelar físicamente o reemplazar.
-                self.results.finish_failure(self._failure(attempt, "attempt_timeout"), retry=retry)
-                request_stop(self.backend, attempt.attempt_id)
-                return
-            self.stopping.wait(0.02)
 
-    def _failure(self, attempt: AttemptSpec, reason: str) -> AttemptOutcome:
-        return AttemptOutcome(
-            match_id=attempt.match.match_id,
-            attempt_id=attempt.attempt_id,
-            generation=attempt.generation,
-            # Un envío rechazado no llegó a tener worker.
-            worker_id=self.backend.worker_of(attempt.attempt_id) or "unassigned",
-            kind=OutcomeKind.INFRASTRUCTURE_FAILURE,
-            winner_id="",
-            reason=reason,
-        )
+def settle(results: PersistentTournamentService, outcome: AttemptOutcome, *, retry: bool) -> bool:
+    """Confirma lo que devolvió un intento; True si se aceptó un resultado deportivo."""
+    if outcome.kind in {OutcomeKind.COMPLETED, OutcomeKind.BOT_FAILURE}:
+        return results.accept(outcome)
+    results.finish_failure(
+        outcome, retry=retry and outcome.kind == OutcomeKind.INFRASTRUCTURE_FAILURE
+    )
+    return False
+
+
+def expire(
+    backend: ExecutionBackend,
+    results: PersistentTournamentService,
+    attempt: AttemptSpec,
+    *,
+    retry: bool,
+) -> None:
+    # Invalidación durable antes de cancelar físicamente o reemplazar.
+    results.finish_failure(failure(backend, attempt, "attempt_timeout"), retry=retry)
+    request_stop(backend, attempt.attempt_id)
+
+
+def failure(backend: ExecutionBackend, attempt: AttemptSpec, reason: str) -> AttemptOutcome:
+    return AttemptOutcome(
+        match_id=attempt.match.match_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        # Un envío rechazado no llegó a tener worker.
+        worker_id=backend.worker_of(attempt.attempt_id) or "unassigned",
+        kind=OutcomeKind.INFRASTRUCTURE_FAILURE,
+        winner_id="",
+        reason=reason,
+    )

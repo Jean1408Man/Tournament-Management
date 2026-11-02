@@ -52,9 +52,10 @@ def build_parser() -> argparse.ArgumentParser:
     match.add_argument("--spec", required=True)
     simulate = commands.add_parser("simulate", help="Simula un torneo local.")
     simulate.add_argument("--spec", required=True)
-    verify = commands.add_parser("verify", help="Pendiente del paso 5.2")
-    verify.set_defaults(pending_step="5.2")
-    verify.add_argument("--events")
+    verify = commands.add_parser(
+        "verify", help="Comprueba los invariantes sobre una carpeta de evidencia."
+    )
+    verify.add_argument("--evidence", required=True, help="Carpeta guardada por dump()")
     return parser
 
 
@@ -64,8 +65,10 @@ def main() -> None:
     if args.command is None:
         parser.print_help()
         return
-    if hasattr(args, "pending_step"):
-        parser.error(f"{args.command} no implementado; previsto para el paso {args.pending_step}")
+    if args.command == "verify":
+        # Solo lee archivos: no necesita configuración del servidor.
+        command_handlers.verify(args, parser)
+        return
     try:
         settings = Settings.load(vars(args), os.environ)
     except ValueError as exc:

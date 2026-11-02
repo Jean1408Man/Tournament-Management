@@ -4,18 +4,19 @@
 # Los datos persisten en TM_LOCAL_HOME (~/.local/share/tournament-management)
 # entre stop y start; solo `reset` los borra. Guía: deploy/ARRANQUE.md.
 #
-# Uso: bash scripts/local-cluster.sh start|stop|status|reset|add-worker N|
+# Uso: bash deploy/local/local-cluster.sh start|stop|status|reset|add-worker N|
 #      kill NOMBRE|pause NOMBRE|resume NOMBRE|restore NOMBRE|recover
-# NOMBRE: head o tm-worker-N.
+# NOMBRE: head, coordinator o tm-worker-N.
 set -euo pipefail
 
-PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PROJECT_DIR"
 LOCAL_HOME="${TM_LOCAL_HOME:-$HOME/.local/share/tournament-management}"
 RUN="$LOCAL_HOME/run" LOGS="$LOCAL_HOME/logs" PGDATA_DIR="$LOCAL_HOME/postgres"
-VENV="${TM_VENV:-$PROJECT_DIR/.venv}"
+# Donde instala uv sync: TM_VENV, o UV_PROJECT_ENVIRONMENT si uv lo usa, o .venv.
+VENV="${TM_VENV:-${UV_PROJECT_ENVIRONMENT:-$PROJECT_DIR/.venv}}"
 API_PORT="${TM_API_PORT:-8000}" CLIENT_PORT="${TM_LOCAL_RAY_CLIENT_PORT:-10001}"
-PG_PORT="${TM_LOCAL_PG_PORT:-5433}" WORKERS="${TM_LOCAL_WORKERS:-2}"
+PG_PORT="${TM_LOCAL_PG_PORT:-5433}" WORKERS="${TM_LOCAL_WORKERS:-${TM_WORKERS:-4}}"
 DB_URL="postgresql:///tournament_management?host=$RUN&port=$PG_PORT&user=tm"
 API="http://127.0.0.1:$API_PORT"
 # Misma mitigación gRPC que el despliegue Docker (decisión 1.15).
@@ -102,7 +103,7 @@ clean_ray() {
 head_start() {
   rm -f "$RUN/head.address"
   : > "$LOGS/head.log"
-  start_bg head "$VENV/bin/python" scripts/local_cluster.py head \
+  start_bg head "$VENV/bin/python" deploy/local/local_cluster.py head \
     --client-port "$CLIENT_PORT" --address-file "$RUN/head.address"
   wait_for "head de Ray" 120 --watch head test -s "$RUN/head.address" ||
     die "El head de Ray terminó al arrancar (ver $LOGS/head.log)"
@@ -116,7 +117,7 @@ worker_start() {  # nombre
     : > "$LOGS/$1.log"
     # Sin volumen compartido: descarga los bots del coordinador con el token (4.2).
     TM_ARTIFACT_URL="$API" TM_INTERNAL_TOKEN="$(cat "$RUN/token")" \
-      start_bg "$1" "$VENV/bin/python" scripts/local_cluster.py worker \
+      start_bg "$1" "$VENV/bin/python" deploy/local/local_cluster.py worker \
       --name "$1" --address-file "$RUN/head.address"
     wait_for "$1" 120 --watch "$1" grep -q "listo worker $1" "$LOGS/$1.log" && return 0
     say "$1 terminó al registrarse (intento $attempt): $(grep -m1 -E 'Error|error' "$LOGS/$1.log" | cut -c1-160)"
@@ -199,7 +200,11 @@ case "${1:-}" in
   resume) signal_tree CONT "${2:?nombre}"; say "Reanudado $2" ;;
   restore)
     name="${2:?nombre}"
-    if [[ "$name" == head ]]; then alive head || head_start; else worker_start "$name"; fi
+    case "$name" in
+      head) alive head || head_start ;;
+      coordinator) alive coordinator || coordinator_start ;;
+      *) worker_start "$name" ;;
+    esac
     ;;
   recover)
     # Equivale al procedimiento de OPERATIONS.md tras perder el head: head nuevo,

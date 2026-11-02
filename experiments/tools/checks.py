@@ -1,7 +1,7 @@
 """Lectura de la evidencia guardada por dump() y comprobaciones comunes (4.4).
 
 Lo importan los fragmentos de Python de cada escenario:
-    sys.path.insert(0, SCENARIO_DIR); from checks import Evidence
+    sys.path.insert(0, "experiments/tools"); from checks import Evidence
 """
 
 import json

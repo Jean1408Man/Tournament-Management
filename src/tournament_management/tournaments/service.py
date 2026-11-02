@@ -10,7 +10,7 @@ import json
 from collections.abc import Callable
 
 from tournament_management.events.durable import append_event
-from tournament_management.shared.errors import ConflictError
+from tournament_management.shared.errors import ConflictError, OverloadedError
 from tournament_management.shared.messages import (
     AttemptOutcome,
     AttemptSpec,
@@ -27,9 +27,12 @@ class PersistentTournamentService:
         self,
         work_factory: Callable[[], UnitOfWork],
         publish: Callable[[DomainEvent], None] | None = None,
+        *,
+        max_active_tournaments: int | None = None,
     ) -> None:
         self.work_factory = work_factory
         self.publish = publish
+        self.max_active_tournaments = max_active_tournaments
 
     def create(self, spec: TournamentSpec, *, idempotency_key: str) -> str:
         digest = hashlib.sha256(spec.to_json().encode()).hexdigest()
@@ -44,6 +47,10 @@ class PersistentTournamentService:
             try:
                 row = work.tournaments.get(identifier)
             except KeyError:
+                limit = self.max_active_tournaments
+                if limit is not None and work.tournaments.active_count() >= limit:
+                    # Sin commit: no se guarda el torneo ni se gasta la clave.
+                    raise OverloadedError(f"Hay {limit} torneos en curso") from None
                 work.tournaments.create(spec)
                 event = self._event(work, spec.tournament_id, "tournament.created")
             else:

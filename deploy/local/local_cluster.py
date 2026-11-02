@@ -1,12 +1,12 @@
-"""Nodos Ray del modo sin Docker (etapa 4.4, D4.9 b). Lo usa scripts/local-cluster.sh.
+"""Nodos Ray del modo sin Docker (etapa 4.4, D4.9 b). Lo usa deploy/local/local-cluster.sh.
 
 `ray start` se colgó en WSL; aquí se arrancan los nodos como hace
 ray.cluster_utils, que ya usan las pruebas. Un proceso por nodo, como un
 contenedor por nodo en Docker: matar, pausar o reanudar ese proceso y sus
 descendientes equivale a docker kill / pause / unpause.
 
-    python scripts/local_cluster.py head --client-port 10001 --address-file F
-    python scripts/local_cluster.py worker --name tm-worker-1 --address-file F
+    python deploy/local/local_cluster.py head --client-port 10001 --address-file F
+    python deploy/local/local_cluster.py worker --name tm-worker-1 --address-file F
 
 Cada proceso queda vivo hasta recibir SIGTERM o SIGINT, y entonces detiene su nodo.
 """

@@ -3,7 +3,7 @@
 # torneo debe continuar"). Partida lenta, se espera su attempt.dispatched y se
 # mata ESE worker. Se espera otro intento (otro attempt_id, generación mayor y
 # mismo MatchSpec) en otro worker y exactamente un resultado aceptado.
-source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 scenario_start worker-loss
 register slow-1 bots/slow.py
 register slow-2 bots/slow.py

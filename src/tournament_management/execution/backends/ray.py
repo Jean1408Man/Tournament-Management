@@ -209,7 +209,7 @@ class RayExecution:
             # Ray informa que la tarea murió. Si no lo pedimos nosotros (cancelación),
             # el worker queda sospechoso aunque Ray aún lo liste como vivo (D3.1).
             if entry.timer is None:
-                self._membership.suspect(entry.worker_id)
+                self._membership.suspect(entry.worker_id, entry.node_id)
             return self._failure(entry, f"ray:{type(exc).__name__}")
         try:
             outcome = AttemptOutcome.from_json(raw)

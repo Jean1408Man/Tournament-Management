@@ -3,7 +3,7 @@
 # que falla"). Un torneo por cada bot defectuoso contra el óptimo, con workers
 # sanos. Se espera bot_failure con victoria del rival en un único intento, sin
 # fallos de infraestructura, y que los workers sigan available.
-source "$(dirname -- "${BASH_SOURCE[0]}")/lib.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 scenario_start faulty-bot
 register optimal bots/optimal.py
 faulty=(illegal_move invalid_output premature_exit timeout too_much_output stderr_flood)

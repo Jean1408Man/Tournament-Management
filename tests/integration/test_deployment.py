@@ -188,7 +188,8 @@ def fake_commands(tmp_path):
 def test_entrypoint_roles(fake_commands, role, expected):
     env, calls = fake_commands
     result = subprocess.run(
-        ["bash", str(ROOT / "deploy/entrypoint.sh"), role], env=env, capture_output=True, text=True
+        ["bash", str(ROOT / "deploy/docker/entrypoint.sh"), role],
+        env=env, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
     args = json.loads(calls.read_text().splitlines()[0])
@@ -201,7 +202,7 @@ def test_entrypoint_roles(fake_commands, role, expected):
 def test_unknown_role_fails(fake_commands):
     env, calls = fake_commands
     result = subprocess.run(
-        ["bash", str(ROOT / "deploy/entrypoint.sh"), "unknown"], env=env, capture_output=True
+        ["bash", str(ROOT / "deploy/docker/entrypoint.sh"), "unknown"], env=env, capture_output=True
     )
     assert result.returncode == 2
     assert not calls.exists()
@@ -210,7 +211,7 @@ def test_unknown_role_fails(fake_commands):
 def test_stop_refuses_foreign_container(fake_commands):
     env, calls = fake_commands
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/stop-cluster.sh")], env=env, capture_output=True
+        ["bash", str(ROOT / "deploy/docker/stop-cluster.sh")], env=env, capture_output=True
     )
     assert result.returncode != 0
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
@@ -220,7 +221,8 @@ def test_stop_refuses_foreign_container(fake_commands):
 def test_fail_worker_refuses_non_worker(fake_commands):
     env, calls = fake_commands
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/fail-worker.sh"), "tm-head"], env=env, capture_output=True
+        ["bash", str(ROOT / "deploy/docker/fail-worker.sh"), "tm-head"],
+        env=env, capture_output=True,
     )
     assert result.returncode != 0
     assert not calls.exists()
@@ -230,7 +232,7 @@ def test_membership_timeout_is_reported_and_runs_inside_container(fake_commands)
     env, calls = fake_commands
     env.update(TEST_OWNED="1", TEST_MEMBERSHIP_EXIT="124")
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/cluster-status.sh")],
+        ["bash", str(ROOT / "deploy/docker/cluster-status.sh")],
         env=env,
         capture_output=True,
         text=True,
@@ -248,7 +250,7 @@ def test_status_uses_ray_configuration_for_doctor(fake_commands):
     env, calls = fake_commands
     env.update(TEST_OWNED="1", TEST_DIFFERENT_IMAGES="1")
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/cluster-status.sh")],
+        ["bash", str(ROOT / "deploy/docker/cluster-status.sh")],
         env=env,
         capture_output=True,
         text=True,
@@ -273,7 +275,7 @@ def test_dotenv_read_as_data_and_environment_wins(fake_commands, tmp_path):
             "-c",
             'source "$1"; printf "%s %s" "$TM_API_PORT" "$TM_POSTGRES_PASSWORD"',
             "test",
-            str(ROOT / "scripts/common.sh"),
+            str(ROOT / "deploy/docker/common.sh"),
         ],
         env=env,
         capture_output=True,
@@ -288,7 +290,7 @@ def test_stop_uses_timeout_and_preserves_volume(fake_commands):
     env, calls = fake_commands
     env["TEST_OWNED"] = "1"
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/stop-cluster.sh")],
+        ["bash", str(ROOT / "deploy/docker/stop-cluster.sh")],
         env=env,
         capture_output=True,
         text=True,
@@ -296,7 +298,10 @@ def test_stop_uses_timeout_and_preserves_volume(fake_commands):
     assert result.returncode == 0, result.stderr
     commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
     stops = [args for args in commands if args[0] == "stop"]
-    assert len(stops) == 5
+    assert [args[-1] for args in stops] == [
+        "tm-coordinator", "tm-worker-4", "tm-worker-3", "tm-worker-2", "tm-worker-1",
+        "tm-head", "tm-postgres",
+    ]
     assert all(args[1:3] == ["--timeout", "20"] for args in stops)
     assert not any(args[0] in {"volume", "network"} for args in commands)
 
@@ -305,7 +310,7 @@ def start_runs(fake_commands, **extra):
     env, calls = fake_commands
     env.update(TEST_OWNED="1", TEST_START="1", TM_POSTGRES_PASSWORD="testonly", **extra)
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/start-cluster.sh")],
+        ["bash", str(ROOT / "deploy/docker/start-cluster.sh")],
         env=env,
         capture_output=True,
         text=True,
@@ -325,7 +330,10 @@ def test_start_gives_workers_download_access_without_shared_volume(fake_commands
     runs = start_runs(fake_commands)
     token = env_value(runs["tm-coordinator"], "TM_INTERNAL_TOKEN")
     assert token and len(token) >= 16
-    for worker in ("tm-worker-1", "tm-worker-2"):
+    workers = [name for name in runs if name.startswith("tm-worker-")]
+    assert workers == ["tm-worker-1", "tm-worker-2", "tm-worker-3", "tm-worker-4"]
+    for worker in workers:
+        assert runs[worker][runs[worker].index("--memory") + 1] == "2g"
         assert not any("tm-artifacts" in arg for arg in runs[worker])
         assert not any("source=tm-state" in arg for arg in runs[worker])
         assert env_value(runs[worker], "TM_DATABASE_URL") is None
@@ -334,6 +342,27 @@ def test_start_gives_workers_download_access_without_shared_volume(fake_commands
     assert "source=tm-artifacts,target=/var/lib/tm/artifacts" in runs["tm-coordinator"]
     assert not any("tm-artifacts" in arg for arg in runs["tm-head"])
     assert env_value(runs["tm-head"], "TM_INTERNAL_TOKEN") is None
+
+
+def test_worker_count_and_memory_are_configured_in_one_place(fake_commands):
+    runs = start_runs(fake_commands, TM_WORKERS="2", TM_WORKER_MEMORY="1536m")
+    workers = [name for name in runs if name.startswith("tm-worker-")]
+    assert workers == ["tm-worker-1", "tm-worker-2"]
+    assert all(runs[w][runs[w].index("--memory") + 1] == "1536m" for w in workers)
+    assert runs["tm-head"][runs["tm-head"].index("--memory") + 1] == "2g"
+
+
+@pytest.mark.parametrize("value", ["0", "dos", "-1"])
+def test_invalid_worker_count_is_rejected(fake_commands, value):
+    env, calls = fake_commands
+    env.update(TEST_OWNED="1", TM_POSTGRES_PASSWORD="testonly", TM_WORKERS=value)
+    result = subprocess.run(
+        ["bash", str(ROOT / "deploy/docker/start-cluster.sh")],
+        env=env, capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "TM_WORKERS" in result.stderr
+    assert not calls.exists()
 
 
 def test_start_generates_a_new_token_unless_exported(fake_commands, tmp_path):
@@ -350,7 +379,7 @@ def add_worker(fake_commands, name, **extra):
     env, calls = fake_commands
     env.update(TEST_OWNED="1", TEST_MISSING="tm-worker-3", **extra)
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/add-worker.sh"), name],
+        ["bash", str(ROOT / "deploy/docker/add-worker.sh"), name],
         env=env, capture_output=True, text=True, timeout=20,
     )
     commands = (
@@ -390,7 +419,7 @@ def test_artifact_probe_requires_download_without_shared_volume(fake_commands, m
     env, calls = fake_commands
     env.update(TEST_OWNED="1", TEST_MOUNTED=mounted)
     result = subprocess.run(
-        ["bash", str(ROOT / "scripts/probe-artifact.sh"), "a" * 64],
+        ["bash", str(ROOT / "deploy/docker/probe-artifact.sh"), "a" * 64],
         env=env,
         capture_output=True,
         text=True,
@@ -399,8 +428,7 @@ def test_artifact_probe_requires_download_without_shared_volume(fake_commands, m
     checks = [args for args in commands if "verify-artifact" in args]
     if not mounted:
         assert result.returncode == 0, result.stderr
-        assert len(checks) == 2
-        assert {args[1] for args in checks} == {"tm-worker-1", "tm-worker-2"}
+        assert [args[1] for args in checks] == [f"tm-worker-{i}" for i in range(1, 5)]
     else:
         assert result.returncode != 0
         assert not checks
@@ -410,7 +438,7 @@ def test_coordinator_entrypoint_honors_execution_backend(fake_commands):
     env, calls = fake_commands
     env["TM_BACKEND"] = "local"
     result = subprocess.run(
-        ["bash", str(ROOT / "deploy/entrypoint.sh"), "coordinator"],
+        ["bash", str(ROOT / "deploy/docker/entrypoint.sh"), "coordinator"],
         env=env,
         capture_output=True,
         text=True,

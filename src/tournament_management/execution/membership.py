@@ -60,9 +60,11 @@ class WorkerMembership:
                 chosen[name] = entry
         return list(chosen.values())
 
-    def suspect(self, name: str) -> None:
+    def suspect(self, name: str, node_id: str) -> None:
+        """Solo si el fallo vino de la identidad actual: un intento enviado al
+        proceso viejo de un worker reiniciado no castiga al nuevo (E1.14)."""
         worker = self._workers.get(name)
-        if worker is not None and worker.alive:
+        if worker is not None and worker.alive and worker.node_id == node_id:
             worker.suspected_until = self._clock() + self._cooldown
 
     def status(self, name: str) -> WorkerStatus:
