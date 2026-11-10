@@ -117,6 +117,7 @@ worker_start() {  # nombre
     : > "$LOGS/$1.log"
     # Sin volumen compartido: descarga los bots del coordinador con el token (4.2).
     TM_ARTIFACT_URL="$API" TM_INTERNAL_TOKEN="$(cat "$RUN/token")" \
+      TM_WORKER_LOG_PATH="$LOGS/$1.log" \
       start_bg "$1" "$VENV/bin/python" deploy/local/local_cluster.py worker \
       --name "$1" --address-file "$RUN/head.address"
     wait_for "$1" 120 --watch "$1" grep -q "listo worker $1" "$LOGS/$1.log" && return 0

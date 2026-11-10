@@ -41,17 +41,28 @@ RESULTS_LINE = re.compile(r"resultados en (experiments/results/[^\s)]+)")
 
 
 def detect_mode() -> str:
-    """Como lib.sh, salvo que en Windows solo existe Docker (el local va en WSL)."""
+    """Respeta el modo explícito; en Linux prefiere un clúster local activo o Docker."""
     forced = os.environ.get("TM_UI_MODE", "")
     if forced in ("docker", "local"):
         return forced
     if os.name == "nt":
         return "docker"
+    local_pid = LOCAL_HOME / "run" / "coordinator.pid"
+    try:
+        if local_pid.is_file():
+            os.kill(int(local_pid.read_text()), 0)
+            return "local"
+    except (OSError, ValueError):
+        pass
     try:
         out = subprocess.run(
             ["docker", "container", "inspect", "--format", "{{.State.Running}}",
              "tm-coordinator"], capture_output=True, text=True, timeout=10)
-        return "docker" if out.stdout.strip() == "true" else "local"
+        if out.stdout.strip() == "true":
+            return "docker"
+        available = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
+                                   capture_output=True, timeout=10)
+        return "docker" if available.returncode == 0 else "local"
     except (OSError, subprocess.TimeoutExpired):
         return "local"
 
@@ -265,9 +276,21 @@ def warning(mode: str) -> str:
         if not ok:
             return ("Docker no responde: abre Docker Desktop. Si el clúster es el local de "
                     "WSL, arranca el panel dentro de WSL con TM_UI_MODE=local.")
+        running = subprocess.run(
+            ["docker", "container", "inspect", "--format", "{{.State.Running}}",
+             "tm-coordinator"], capture_output=True, text=True, timeout=10)
+        if running.stdout.strip() != "true":
+            return ("Clúster Docker apagado. Pulsa Arrancar; si quedaron contenedores "
+                    "detenidos, usa primero Parar para retirarlos.")
     elif not (LOCAL_HOME / "run").is_dir():
         return "No hay clúster local: pulsa Arrancar o usa deploy/local/local-cluster.sh start."
-    return ""
+    try:
+        with urllib.request.urlopen(f"{API}/ready", timeout=2) as response:
+            if response.status == 200:
+                return ""
+    except (OSError, urllib.error.HTTPError):
+        pass
+    return "El clúster está arrancando o la API aún no está disponible."
 
 
 class Runner:

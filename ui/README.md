@@ -29,8 +29,8 @@ Imprime una URL con un token (`http://127.0.0.1:8765/?token=…`): ábrela en el
 navegador. El token cambia en cada arranque. No arranques dos paneles en el mismo
 puerto, uno en Windows y otro en WSL: el navegador llega al de Windows y responde
 "token incorrecto" con la URL del otro. En Windows el modo es siempre
-Docker; en Linux o WSL es Docker si el contenedor `tm-coordinator` está en marcha
-y local si no. Variables: `TM_UI_MODE` (`docker` o `local`) fuerza el modo,
+Docker; en Linux o WSL se usa un clúster local activo si existe y, en otro caso,
+Docker cuando está disponible. Variables: `TM_UI_MODE` (`docker` o `local`) fuerza el modo,
 `TM_UI_PORT` cambia el puerto (8765) y `TM_API` la dirección de la API
 (`http://127.0.0.1:8000`).
 
@@ -40,19 +40,26 @@ Desktop cerrado mientras corre el clúster local de WSL: los workers se ven,
 porque vienen de la API, pero torneos, partidas, logs y órdenes fallan. La
 solución es arrancar el panel dentro de WSL con `TM_UI_MODE=local`.
 
+Si el clúster está apagado o aún arrancando, los indicadores muestran `–` y los
+paneles de datos muestran un estado vacío. Si quedaron contenedores Docker
+detenidos, pulsa **Parar** para retirarlos antes de **Arrancar**; los volúmenes
+con los datos se conservan.
+
 ## Paneles
 
-Arriba, cinco cifras: workers disponibles, ocupación, torneos activos, partidas en
-curso y reintentos de los torneos listados.
+Arriba, cinco cifras: workers disponibles, ocupación, torneos activos, workers
+ocupados y reintentos de los torneos listados.
 
 - **Workers**: una tarjeta por worker con su estado (`available` en verde,
   `suspected` parpadeando en ámbar, `lost` o caído en gris) y una barra de
   ocupación. Elige uno para ver su log.
 - **Torneos**: los activos y los últimos 10 terminados, con bots, una barra de
-  partidas hechas, las partidas en curso y los reintentos. Elige uno para ver sus
+  partidas hechas, los intentos sin confirmar y los reintentos. Elige uno para ver sus
   eventos.
-- **Partidas en ejecución**: cada intento en curso con su torneo, bots,
-  generación (más de 1 significa reintento), worker y desde hace cuánto.
+- **Intentos sin confirmar**: intentos emitidos que PostgreSQL aún no ha cerrado,
+  con su torneo, bots, generación, worker y antigüedad. Pueden superar el número
+  de workers: algunos ya terminaron en el worker y esperan que el coordinador
+  confirme su resultado. La ocupación y «workers ocupados» vienen de Ray.
 - **Eventos**: el flujo de eventos del torneo elegido, en vivo, como línea de
   tiempo: `+` creado o emitido, `→` enviado a un worker, `✓` aceptado, `✕` fallo
   o descarte, `⊘` cancelación.
@@ -135,7 +142,7 @@ actualizan solos cada 5 s.
     coordinador deja de contar con él.
   - **Con una partida en curso**: el intento termina como fallo de
     infraestructura, el worker pasa a `suspected` y la partida se repite en otro
-    worker con generación 2 (en **Partidas en ejecución** sale "reintento 2").
+    worker con generación 2 (en **Intentos sin confirmar** sale "reintento 2").
     Ningún bot pierde por ello.
   - En los dos casos el worker no vuelve solo: queda caído hasta que lo recuperes.
 - **Recuperar worker**: vuelve a arrancar un worker caído, sea por "Provocar
@@ -223,7 +230,8 @@ corrieron a la vez y cuántos le tocaron a cada worker, y pasa `tm verify`.
   (Docker).
 
 Mientras corre, el panel **Torneos** se llena de torneos `load-…` en `running` y
-el de **Partidas en ejecución** muestra hasta 4 a la vez.
+el contador **Workers ocupados** muestra hasta 4 a la vez. La lista
+**Intentos sin confirmar** puede mostrar más mientras se guardan resultados.
 
 ### Verificar
 

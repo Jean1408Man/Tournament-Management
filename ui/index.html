@@ -152,7 +152,7 @@
   <div class="kpi"><span>Workers disponibles</span><b id="k-workers">–</b></div>
   <div class="kpi"><span>Ocupación</span><b id="k-busy">–</b></div>
   <div class="kpi"><span>Torneos activos</span><b id="k-active">–</b></div>
-  <div class="kpi"><span>Partidas en curso</span><b id="k-running">–</b></div>
+  <div class="kpi"><span>Workers ocupados</span><b id="k-running">–</b></div>
   <div class="kpi"><span>Reintentos (torneos listados)</span><b id="k-retries">–</b></div>
 </div>
 <main>
@@ -165,7 +165,7 @@
     <div class="body" id="tournaments"></div>
   </section>
   <section class="w7 tall">
-    <h2>Partidas en ejecución <small id="attempts-note"></small></h2>
+    <h2>Intentos sin confirmar <small id="attempts-note"></small></h2>
     <div class="body" id="attempts"></div>
   </section>
   <section class="w5 tall">
@@ -225,6 +225,18 @@ function showError(target, error) {
   $(target).replaceChildren(el("div", "No disponible: " + error.message, "error"));
 }
 
+function showOffline() {
+  for (const id of ["k-workers", "k-busy", "k-active", "k-running", "k-retries"]) {
+    $(id).textContent = "–";
+  }
+  for (const id of ["workers", "tournaments", "attempts"]) {
+    $(id).replaceChildren(el("div", "El clúster está apagado o arrancando.", "empty"));
+  }
+  $("attempts-note").textContent = "";
+  $("dot").classList.add("off");
+  $("status").textContent = "clúster no disponible · " + new Date().toLocaleTimeString();
+}
+
 // --- Workers ---
 async function refreshWorkers() {
   try {
@@ -237,6 +249,7 @@ async function refreshWorkers() {
     const slots = live.reduce((n, w) => n + w.capacity, 0);
     $("k-workers").textContent = `${live.filter((w) => w.status === "available").length} / ${live.length}`;
     $("k-busy").textContent = slots ? `${Math.round((100 * busyN) / slots)} %` : "–";
+    $("k-running").textContent = busyN;
     [...live.map((w) => ({ name: w.worker_id, status: w.status, used: w.running_attempts, cap: w.capacity })),
      ...down.map((w) => ({ name: w.name, status: "caído", used: 0, cap: 1 }))].forEach((w) => {
       const tile = el("div", null, "tile" + (w.status === "caído" || w.status === "lost" ? " down" : "")
@@ -270,7 +283,7 @@ async function refreshTournaments() {
       left.append(el("div", t.tournament_id, "mono"));
       const info = el("div", null, "meta");
       info.append(el("span", `${t.participants} bots`), el("span", `${done}/${total} partidas`));
-      if (m.running) info.append(el("span", `${m.running} en curso`, "badge s-info"));
+      if (m.running) info.append(el("span", `${m.running} sin confirmar`, "badge s-info"));
       if (t.retries) info.append(el("span", `${t.retries} reintento(s)`, "badge s-warn"));
       const bar = el("div", null, "bar"), fill = el("i");
       fill.style.width = `${total ? (100 * done) / total : 0}%`;
@@ -286,15 +299,14 @@ async function refreshTournaments() {
   } catch (error) { showError("tournaments", error); }
 }
 
-// --- Partidas en ejecución ---
+// --- Intentos emitidos que siguen abiertos en PostgreSQL ---
 async function refreshAttempts() {
   try {
     const items = await getJSON("/api/attempts");
-    $("k-running").textContent = items.length;
     $("attempts-note").textContent = items.length ? `${items.length} intento(s)` : "";
     const box = $("attempts");
     box.replaceChildren();
-    if (!items.length) { box.append(el("div", "Ninguna partida en marcha.", "empty")); return; }
+    if (!items.length) { box.append(el("div", "Ningún intento pendiente.", "empty")); return; }
     items.forEach((a) => {
       const row = el("div", null, "row click a-row");
       const who = el("div");
@@ -533,6 +545,7 @@ async function loadMeta(first) {
     $("api").textContent = meta.api;
     $("banner").hidden = !meta.warning;
     $("banner").textContent = meta.warning ? "⚠ " + meta.warning : "";
+    if (meta.warning) showOffline();
     const current = $("log-source").value;
     $("log-source").replaceChildren(...meta.logs.map((s) => new Option(s, s)));
     if (meta.logs.includes(current)) $("log-source").value = current;
@@ -550,6 +563,7 @@ async function loadMeta(first) {
 }
 
 async function tick() {
+  if (meta?.warning) { showOffline(); return; }
   await Promise.all([refreshWorkers(), refreshTournaments(), refreshAttempts()]);
   const ok = !document.querySelector(".error");
   $("dot").classList.toggle("off", !ok);

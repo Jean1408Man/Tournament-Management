@@ -19,6 +19,7 @@ case "$role" in
       --disable-usage-stats --block "$@"
     ;;
   ray-worker)
+    export TM_WORKER_LOG_PATH=/proc/1/fd/1
     # El nombre de nodo es la identidad pública del worker (hostname del contenedor).
     exec ray start --address="${TM_RAY_HEAD_ADDRESS:-tm-head:6379}" \
       --node-name="$(hostname)" \
