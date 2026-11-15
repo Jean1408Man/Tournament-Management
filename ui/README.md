@@ -100,6 +100,20 @@ Los torneos y las partidas salen de una consulta de solo lectura a PostgreSQL. L
 demás sale de la API pública y de los logs (`docker logs` o
 `~/.local/share/tournament-management/logs/`). Los datos se refrescan cada 2 s.
 
+En `ui/index.html`, `setInterval(tick, 2000)` fija esos 2 segundos. La lista de
+órdenes se actualiza cada 5 s; los eventos y los logs llegan por una conexión
+continua. En la carga rápida, dos refrescos pueden mostrar estados distintos
+porque la API de workers y PostgreSQL se consultan por separado.
+
+Cada worker registra tres momentos por intento: recepción, bots descargados y
+verificados, y resultado producido (tipo, motivo y duración). Si falla la
+preparación, registra el fallo. El coordinador registra el envío al worker,
+aceptación o descarte del resultado y fallos o plazos vencidos. Las líneas
+incluyen identificadores de partida e intento para seguir el mismo trabajo en
+ambos procesos. El panel de logs muestra las últimas 200 líneas de cada
+contenedor y continúa con las nuevas; las partidas anteriores se consultan en
+**Eventos** y en la evidencia de `experiments/results/`.
+
 ## Manual de las órdenes
 
 Las órdenes están en el panel **Ejecuciones**, en pestañas (Clúster, Workers,
