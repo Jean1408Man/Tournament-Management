@@ -4,15 +4,16 @@ Resultados de la campaña de fallos y carga de la Fase 1. Cómo
 ejecutarla: [ejecutar.md](ejecutar.md). Los datos de cada ejecución están en
 `experiments/results/<escenario>-<fecha>/`.
 
-**Resumen.**
+**Resumen histórico (campaña de octubre de 2026).**
 - Docker: 46 ejecuciones, 46 aprobadas, y `tm verify` sin violaciones
   en ninguna.
 - Local (WSL): una ejecución de cada escenario. Todas aprobadas, con `tm verify` sin violaciones.
 
 ## Configuración común
 
-**Docker** (campaña de referencia, `campaign-docker-20261030-220035.log`,
-30-10-2026 de 22:00 a 23:24):
+**Docker** (cantidad de workers de esta medición: cuatro; no es una
+restricción de despliegue). Campaña de referencia: `campaign-docker-20261030-220035.log`,
+30-10-2026 de 22:00 a 23:24.
 
 **Local:** WSL 2.6.3 (Ubuntu, kernel 6.6.87.2, 12 CPU, 6,7 GB).
 
@@ -204,8 +205,8 @@ observación de cada escenario: no miden rendimiento.
 - **Observación:**
   - Con partidas largas la concurrencia escala casi con los workers: 3,7 veces
     más rápido que con un intento a la vez (194 s en 5.1).
-  - Con Nim manda el coste del coordinador por partida (ver la sección
-    siguiente): los workers pasan la mayor parte del tiempo ociosos.
+  - Con Nim, los resultados sugieren que domina el coste del coordinador por
+    partida: los workers pasan la mayor parte del tiempo ociosos.
   - En Docker queda una variación sin explicar en la carga Nim: cuatro
     repeticiones en 85–88 s y una en 45 s. En local la misma carga tarda 21,5 s.
   - El límite de admisión funciona: el exceso recibe 429 y entra al reintentar.

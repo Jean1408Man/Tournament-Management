@@ -1,16 +1,15 @@
-# Despliegue de laboratorio — paso 1.5
+# Operación del clúster de laboratorio
 
 ## Estado y decisiones
 
-Validado el 17 de octubre de 2026 con dos recreaciones reales tras la mitigación
-gRPC descrita abajo: arranque con código 0, membresía, DNS y persistencia correctos.
-Las pruebas automatizadas con dobles de Ray/Docker complementan esa comprobación.
-La ejecución de tareas de diagnóstico en cada worker corresponde a 1.6.
+Guía de diagnóstico y recuperación. Para el primer arranque, sigue
+[ARRANQUE.md](ARRANQUE.md); para comprobar ejecución en cada worker,
+[REMOTE-TESTS.md](REMOTE-TESTS.md).
 
 Una imagen instala Python 3.12.13, uv 0.12.2, el paquete y las dependencias de
 uv.lock, incluido Ray 2.40.0. La etiqueta por defecto es
 tournament-management:step-1.5; TM_IMAGE permite otra. La imagen registra la
-revisión Git (con sufijo dirty si procede). Los cuatro contenedores de la
+revisión Git (con sufijo dirty si procede). Los contenedores de la
 aplicación se crean mediante el mismo ID inmutable de imagen, aunque la etiqueta
 cambie después; PostgreSQL usa su imagen oficial independiente.
 Las imágenes base se fijan por versión, no por digest: registrar su digest al
@@ -23,12 +22,12 @@ hacer la primera construcción si se necesita reproducción binaria exacta.
 | tm-worker-1 … tm-worker-N | Ejecución, una partida a la vez | 1 CPU, `TM_WORKER_MEMORY` (2 GiB) RAM, 512 MiB shm | CPU=1, GPU=0, tm_worker=1 |
 | tm-coordinator | API y driver Ray Client | 1 CPU, 1 GiB RAM | No registra nodo de ejecución |
 
-N = `TM_WORKERS` (4 por defecto, etapa 5.1), en `.env` o en el entorno. Para
+N = `TM_WORKERS`, en `.env` o en el entorno. Para
 añadir uno con el clúster en marcha: `bash deploy/docker/add-worker.sh tm-worker-N`;
 `stop-cluster.sh` retira también los añadidos.
 
-Son límites, no reservas físicas. Presupuesto orientativo con 4 workers: 6 CPU
-y al menos 8 GiB para Docker; medir con `docker stats` y bajar
+Son límites, no reservas físicas. Dimensiona CPU y memoria según la cantidad de workers; mide con
+`docker stats` y ajusta
 `TM_WORKER_MEMORY` si no caben. Cada nodo
 Ray usa 256 MiB de object store. Los valores están en start-cluster.sh.
 El coordinador conserva su estado local en tm-state y PostgreSQL sus datos en
@@ -50,8 +49,7 @@ publica al host. TM_API_PORT cambia el puerto público.
 ## Cómo se conecta el coordinador
 
 El driver usa ray://tm-head:10001. No ejecuta ray start ni registra un worker;
-el head no recibe partidas con reserva CPU positiva. Al implementar tasks
-deben pedir recursos CPU explícitamente; CPU=0 no impide tareas de coste cero.
+el head no recibe partidas con reserva CPU positiva. Las tareas de partida piden recursos CPU explícitamente; CPU=0 no impide tareas de coste cero.
 
 Con `TM_BACKEND=ray`, app.py abre la conexión mediante
 cluster/ray_connection.py al iniciar y la cierra al parar. Si esa conexión
@@ -62,8 +60,8 @@ La consulta de membresía es administrativa, no un endpoint público ni una
 demostración de ejecución en workers.
 
 Ray Client depende de mantener la conexión del driver. No se promete que sus
-tareas sobrevivan a la pérdida del coordinador o del head. La recuperación
-durable y reintentos se implementarán en etapas posteriores.
+tareas sobrevivan a la pérdida del coordinador o del head. La recuperación durable y los reintentos los implementa el coordinador
+a partir del estado de PostgreSQL.
 
 Los scripts pasan GRPC_POLL_STRATEGY=poll y GRPC_ENABLE_FORK_SUPPORT=true a los
 contenedores. Mitigan un aborto observado en gRPC/epoll1 al crear el servidor
@@ -89,7 +87,7 @@ Desde la raíz del repositorio:
 docker info
 docker pull postgres:16.6-bookworm
 bash deploy/docker/build-image.sh
-bash deploy/docker/start-cluster.sh
+TM_BACKEND=ray bash deploy/docker/start-cluster.sh
 bash deploy/docker/cluster-status.sh
 curl http://127.0.0.1:8000/health
 curl -i http://127.0.0.1:8000/ready
@@ -97,7 +95,6 @@ curl -i http://127.0.0.1:8000/ready
 
 build-image.sh es el paso que puede descargar la imagen base, uv, dependencias
 y herramientas de construcción. La instalación uv no modifica uv.lock.
-No ejecutarlo automáticamente si se ha reservado la descarga al usuario.
 start-cluster.sh exige imagen local y usa --pull never.
 
 ### Reintentar tras un fallo de conexión
@@ -132,8 +129,8 @@ Docker la elimina por espacio. No ejecutar limpiezas de caché entre intentos.
 Referencia: [caché uv en Docker](https://docs.astral.sh/uv/guides/integration/docker/#caching)
 y [opciones HTTP de uv](https://docs.astral.sh/uv/configuration/environment/).
 
-Resultado esperado: PostgreSQL disponible, tres nodos Ray vivos (head sin CPU y
-dos workers con CPU), cuatro contenedores de aplicación con la misma imagen,
+Resultado esperado: PostgreSQL disponible, el head sin CPU para partidas y
+los workers configurados con CPU, contenedores de aplicación con la misma imagen,
 resolución DNS interna y API saludable.
 `/ready` devuelve 200 con esquema migrado, almacenamiento disponible y
 coordinador sano, con cualquiera de los dos backends. Con Ray, la falta de
@@ -142,15 +139,14 @@ comprueba vida del proceso.
 
 El arranque espera hasta TM_START_TIMEOUT segundos (180 por defecto) por etapa.
 Si falla muestra logs y conserva contenedores para diagnóstico; no borra el
-estado. Si existe un contenedor con el mismo nombre, se detiene antes de crear
-nuevos: usar stop-cluster.sh y volver a arrancar tras revisar los logs.
+estado. Si existe un contenedor con el mismo nombre, el arranque se rechaza: usar stop-cluster.sh y volver a arrancar tras revisar los logs.
 
 ## Reinicio y persistencia
 
 ```bash
 docker exec tm-coordinator python -c 'from pathlib import Path; Path("/var/lib/tm/step15-check.txt").write_text("persistencia-ok")'
 bash deploy/docker/stop-cluster.sh
-bash deploy/docker/start-cluster.sh
+TM_BACKEND=ray bash deploy/docker/start-cluster.sh
 docker exec tm-coordinator python -c 'from pathlib import Path; assert Path("/var/lib/tm/step15-check.txt").read_text() == "persistencia-ok"; print("Persistencia verificada")'
 ```
 
@@ -170,33 +166,12 @@ bash deploy/docker/cluster-status.sh
 Puede tardar en volver a registrarse. Con backend local, las partidas se
 ejecutan en el coordinador: detener un worker Ray no interrumpe esas partidas.
 
-## Equivalentes Docker explícitos
+## Comandos Docker y diagnóstico
 
-Los scripts incluyen además etiquetas de propiedad, límites, esperas,
-rotación de logs y verificaciones. Esta secuencia muestra los comandos
-principales con las etiquetas necesarias para que stop-cluster.sh los reconozca.
-Usar en un entorno sin esos nombres ya creados.
-
-```bash
-docker build -f deploy/docker/Dockerfile -t tournament-management:step-1.5 .
-docker network create --driver bridge --label org.tournament-management.project=tournament-management tm-net
-docker volume create --label org.tournament-management.project=tournament-management tm-state
-docker run -d --pull never --init --name tm-head --hostname tm-head --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m tournament-management:step-1.5 ray-head
-docker exec tm-head ray health-check --address=127.0.0.1:6379
-docker volume create --label org.tournament-management.project=tournament-management tm-artifacts
-TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-docker run -d --pull never --init --name tm-worker-1 --hostname tm-worker-1 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --env TM_ARTIFACT_URL=http://tm-coordinator:8000 --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 ray-worker
-docker run -d --pull never --init --name tm-worker-2 --hostname tm-worker-2 --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 2g --shm-size 512m --env TM_ARTIFACT_URL=http://tm-coordinator:8000 --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 ray-worker
-# … un docker run por worker, hasta tm-worker-N (TM_WORKERS)
-docker exec tm-head python -m tournament_management.cluster.ray_topology --address ray://tm-head:10001 --expected-workers 2
-docker run -d --pull never --init --name tm-coordinator --hostname tm-coordinator --network tm-net --label org.tournament-management.project=tournament-management --cpus 1 --memory 1g -p 127.0.0.1:8000:8000 --mount source=tm-state,target=/var/lib/tm --mount source=tm-artifacts,target=/var/lib/tm/artifacts --env "TM_INTERNAL_TOKEN=$TOKEN" tournament-management:step-1.5 coordinator
-```
-
-Esperar a que las comprobaciones intermedias tengan éxito antes de continuar.
-ray health-check es una CLI interna de la versión fijada; revisarla al actualizar Ray.
-Para diagnóstico: docker logs --tail 100 NOMBRE_CONTENEDOR.
-La imagen es de laboratorio, ejecuta como root y no aísla código hostil;
-no usar como servicio público para bots no confiables.
+Los scripts de `deploy/docker/` contienen los comandos Docker explícitos, con
+etiquetas, límites, esperas y comprobaciones. No se usa Compose. Para revisar
+un componente: `docker logs --tail 100 NOMBRE_CONTENEDOR`.
+La imagen es de laboratorio; no ofrece aislamiento seguro para código hostil.
 
 ## Artefactos internos (etapa 3.2)
 
@@ -227,7 +202,7 @@ head ni los workers. Reconstruir la imagen y recrear los contenedores con
   una derrota del bot.
 - `tm verify-artifact --artifact-hash HASH` descarga y verifica cuando
   `TM_ARTIFACT_URL` está configurada (en los workers); si no, lee el volumen
-  local. `bash deploy/docker/probe-artifact.sh HASH` comprueba en ambos workers que
+  local. `bash deploy/docker/probe-artifact.sh HASH` comprueba en los workers del proyecto que
   **no** montan `tm-artifacts` y que la descarga verifica.
 - Una lectura de un objeto alterado o ausente falla: no se repara
   automáticamente ni se acepta otro código bajo el mismo hash.
@@ -246,7 +221,7 @@ Reconstruir y recrear incorpora esta etapa conservando los tres volúmenes:
 ```bash
 bash deploy/docker/stop-cluster.sh
 bash deploy/docker/build-image.sh
-bash deploy/docker/start-cluster.sh
+TM_BACKEND=ray bash deploy/docker/start-cluster.sh
 bash deploy/docker/cluster-status.sh
 curl -i http://127.0.0.1:8000/ready
 ```
@@ -265,8 +240,6 @@ Desde 3.4 el arranque reconstruye automáticamente los torneos pendientes con
 backend local, preservando resultados, presupuesto y cancelaciones. Usa un solo
 coordinador activo por base.
 
-Esta etapa se verificó con PostgreSQL y HTTP reales en las pruebas; no se
-reconstruyeron ni recrearon los contenedores como parte de esa verificación.
 
 ## Reinicio del coordinador (etapa 3.4)
 
@@ -308,9 +281,9 @@ TM_DATABASE_URL como TM_DATA_DIR y volver a ejecutar `tm serve --backend local`.
 No iniciar una segunda instancia mientras la anterior siga activa: esta etapa
 no implementa elección de líder ni exclusión entre coordinadores.
 
-Las pruebas automatizadas de 3.4 usan PostgreSQL y HTTP reales con SIGKILL de
-procesos propios. No se ejecutaron estas operaciones Docker durante la entrega.
-El mecanismo de distribución de artefactos entre máquinas permanece en 4.2.
+Las pruebas automatizadas de recuperación usan PostgreSQL y HTTP reales con
+SIGKILL de procesos propios. La campaña complementa esas pruebas con fallos
+en el clúster; sus resultados se documentan en `doc/campaign/resultados.md`.
 
 ## Membresía, capacidad y plazos (etapa 4.3)
 
@@ -328,10 +301,11 @@ El mecanismo de distribución de artefactos entre máquinas permanece en 4.2.
   `TM_ARTIFACT_DOWNLOAD_TIMEOUT_MS` + 10 s (por defecto 90 ≥ 60 + 20 + 10).
   Si no se cumple, el arranque y `tm doctor` avisan, pero no se impide arrancar.
   Medido en Docker: un intento normal tarda de 0,2 a 2,3 s.
-- Añadir un worker al clúster en marcha (misma imagen y token que el coordinador):
+- Añadir un worker al clúster en marcha (misma imagen y token que el coordinador).
+  Sustituye `N` por un número libre; el panel propone el siguiente disponible:
 
 ```bash
-bash deploy/docker/add-worker.sh tm-worker-3
+bash deploy/docker/add-worker.sh tm-worker-N
 ```
 
   `stop-cluster.sh` retira también los workers añadidos: con un token viejo se

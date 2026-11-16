@@ -1,10 +1,4 @@
-# Paso 1.6 — prueba de ejecución remota en cada worker
-
-## Estado de entrega
-
-Implementación preparada. No se ejecutaron comandos de prueba, construcción
-ni operaciones sobre el clúster durante esta entrega, a petición del usuario.
-Completar la validación con las salidas de los comandos de esta guía.
+# Pruebas de ejecución remota
 
 ## Qué comprueba
 
@@ -47,7 +41,7 @@ La suite existente incluye un servidor HTTP local temporal.
 
 ## 2. Actualizar imagen y contenedores
 
-La imagen actual no contiene el nuevo comando. Construir antes de detener
+Si cambió el código, actualiza la imagen. Construir antes de detener
 el clúster: si falla la construcción, el clúster anterior permanece disponible.
 
 ```bash
@@ -68,21 +62,14 @@ Si build o start fallan, detener esta secuencia y compartir la salida.
 mkdir -p experiments/results
 set -o pipefail
 bash deploy/docker/cluster-status.sh
-bash deploy/docker/probe-cluster.sh | tee experiments/results/step16-probe.json
+bash deploy/docker/probe-cluster.sh | tee experiments/results/remote-probe.json
 echo "Código de salida: $?"
 ```
 
-El script ejecuta dentro del coordinador:
-
-```bash
-docker exec tm-coordinator timeout --kill-after=5 120 tm probe-cluster --ray-address ray://tm-head:10001 --expected-workers 2 --timeout-seconds 30
-```
-
-Resultado esperado: código 0 y JSON con status=ok,
-scope=remote_execution_per_worker, expected_workers=2 y dos elementos workers.
-Los node_id deben ser diferentes y los hostname deben identificar tm-worker-1
-y tm-worker-2. Sus versiones deben coincidir. La duración se mide en el
-coordinador; no se restan relojes monotónicos de máquinas diferentes.
+El script cuenta los workers del proyecto, incluidos los añadidos, y pasa esa
+cantidad a `--expected-workers`. Se espera código 0, `status=ok`,
+`scope=remote_execution_per_worker` y un elemento por worker esperado.
+Los `node_id` deben ser distintos y las versiones deben coincidir.
 
 El archivo de evidencia queda fuera de Git según la configuración existente.
 No confundir el status=ok de membresía con el de ejecución remota: el segundo
@@ -91,7 +78,7 @@ requiere haber recogido y validado resultados de tareas.
 ## 4. Comprobar un fallo controlado
 
 Esta prueba verifica que no se declara éxito con un worker ausente. No
-demuestra que un torneo continúe, pues aún no hay motor de torneos.
+demuestra que un torneo continúe, porque solo ejecuta tareas de diagnóstico.
 
 ```bash
 bash deploy/docker/fail-worker.sh tm-worker-2
@@ -114,17 +101,8 @@ bash deploy/docker/probe-cluster.sh
 Si el worker todavía no se ha registrado, esperar unos segundos y repetir las
 dos consultas. No repetir start-cluster.sh sobre contenedores existentes.
 
-## 5. CI y criterio de cierre
+## Criterio de aceptación
 
-.github/workflows/ci.yml define lint y pytest para push/pull_request en GitHub.
-Descarga el entorno en el runner de CI cuando se active; no se ejecutó ni publicó
-desde esta sesión. No sustituye las pruebas Docker de esta guía.
-
-Cerrar 1.6 únicamente tras recibir:
-- Pruebas locales y revisión de código correctas.
-- Arranque del clúster con la imagen actualizada.
-- Evidencia de ejecución en dos workers distintos y versiones coincidentes.
-- Fallo explícito con un worker ausente y éxito después de restaurarlo.
-
-Al cerrar 1.6 queda validada la base de la etapa 1. La implementación del juego,
-árbitro y torneos locales empieza en etapa 2.
+La prueba debe comprobar todos los workers configurados y añadidos, detectar
+un worker ausente y volver a pasar tras restaurarlo. No sustituye la campaña
+de partidas, fallos y carga ni verifica su recuperación.

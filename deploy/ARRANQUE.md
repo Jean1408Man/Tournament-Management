@@ -1,6 +1,6 @@
 # Arranque: con Docker o sin Docker
 
-Los dos modos ejecutan lo mismo: API, coordinador, Ray (un head y `TM_WORKERS` workers, 4 por defecto) y
+Los dos modos ejecutan lo mismo: API, coordinador, Ray (un head y la cantidad configurada de workers) y
 PostgreSQL, con las partidas en los workers (`TM_BACKEND=ray`). Cambia dónde
 vive cada pieza:
 
@@ -40,7 +40,8 @@ Parar (los datos se conservan):
 bash deploy/docker/stop-cluster.sh
 ```
 
-Añadir un worker: `bash deploy/docker/add-worker.sh tm-worker-3`. En Git Bash de
+Añadir un worker: `bash deploy/docker/add-worker.sh tm-worker-N`, sustituyendo
+`N` por un número libre. El panel propone el siguiente disponible. En Git Bash de
 Windows, si un script falla con rutas `C:/...` en argumentos de Docker, antepón
 `MSYS_NO_PATHCONV=1` a `start-cluster.sh`.
 
