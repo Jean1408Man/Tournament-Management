@@ -7,11 +7,13 @@ comando elegido por el cliente. Esto no constituye aislamiento de código hostil
 
 import sys
 import threading
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from tournament_management.competitors.artifact_store import ArtifactReader
 from tournament_management.game.referee import run_match
+from tournament_management.shared.logging import worker_event
 from tournament_management.shared.messages import AttemptOutcome, AttemptSpec, OutcomeKind
 
 
@@ -22,12 +24,17 @@ def run_registered_match(
     worker_id: str = "local",
     cancel: threading.Event | None = None,
 ) -> AttemptOutcome:
+    started = time.monotonic()
+    worker_event("Intento recibido; preparando bots", attempt=attempt, worker_id=worker_id,
+                 generation=attempt.generation)
     try:
         if sys.version_info[:2] != (3, 12):
             raise OSError("El runtime del worker debe ser Python 3.12")
         # Leer ambos antes de arrancar ninguno: un artefacto ausente/corrupto
         # representa un fallo de infraestructura, nunca una derrota de su bot.
         sources = tuple(store.get(value) for value in attempt.match.artifact_hashes)
+        worker_event("Bots descargados y verificados", attempt=attempt, worker_id=worker_id,
+                     elapsed_ms=round((time.monotonic() - started) * 1000))
         with TemporaryDirectory(prefix="tm-attempt-") as directory:
             commands = []
             for player, source in enumerate(sources):
@@ -35,13 +42,21 @@ def run_registered_match(
                 path.write_bytes(source)
                 path.chmod(0o400)
                 commands.append((sys.executable, "-I", "-B", str(path)))
-            return run_match(
+            outcome = run_match(
                 attempt,
                 tuple(commands),
                 worker_id=worker_id,
                 cancel=cancel,
             )
+            worker_event("Partida terminada; resultado enviado al coordinador",
+                         attempt=attempt, worker_id=worker_id, kind=outcome.kind.value,
+                         reason=outcome.reason,
+                         elapsed_ms=round((time.monotonic() - started) * 1000))
+            return outcome
     except OSError:
+        worker_event("Intento falló al preparar los bots o el runtime",
+                     attempt=attempt, worker_id=worker_id,
+                     elapsed_ms=round((time.monotonic() - started) * 1000))
         return AttemptOutcome(
             match_id=attempt.match.match_id,
             attempt_id=attempt.attempt_id,

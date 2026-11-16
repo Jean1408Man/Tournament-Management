@@ -7,6 +7,7 @@
 # para al final y deja un registro experiments/results/campaign-<modo>-<fecha>.log;
 # el resumen lo da: python experiments/tools/summarize.py <ese registro>.
 set -uo pipefail
+failures=0
 cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
 mode="${1:-docker}"
 [[ $mode == docker || $mode == local ]] || { echo "Uso: campaign.sh [docker|local]" >&2; exit 2; }
@@ -35,6 +36,7 @@ run() {  # repeticiones [VAR=valor...] comando...
   for ((i = 1; i <= n; i++)); do
     env TM_SCENARIO_MODE="$mode" "$@" >/dev/null 2>&1
     status=$?
+    if ((status != 0)); then failures=$((failures + 1)); fi
     echo "run rep=$i exit=$status $(date +%T) $*" | tee -a "$log"
   done
 }
@@ -59,3 +61,5 @@ run "$key" bash experiments/scenarios/load.sh saturacion --mix elimination:4x6 -
 if [[ $mode == docker ]]; then MSYS_NO_PATHCONV=1 bash deploy/docker/stop-cluster.sh >/dev/null 2>&1
 else bash deploy/local/local-cluster.sh stop >/dev/null 2>&1; fi
 echo "fin $(date +%T)" | tee -a "$log"
+echo "escenarios fallidos=$failures" | tee -a "$log"
+((failures == 0))

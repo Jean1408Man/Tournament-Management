@@ -12,7 +12,9 @@ Los escenarios funcionan igual con Docker que sin él y detectan el modo solos:
 Docker si el contenedor `tm-coordinator` está en marcha, local si no.
 `TM_SCENARIO_MODE=docker|local` lo fuerza.
 
-**Con Docker**, desde Git Bash en la raíz del repositorio:
+**Con Docker**, desde Bash en la raíz del repositorio (Linux como primera opción;
+en Windows, WSL o Git Bash). Prepara `.env` según el README y descarga
+`docker pull postgres:16.6-bookworm` antes de construir:
 
 ```bash
 bash deploy/docker/build-image.sh
@@ -29,7 +31,7 @@ bash deploy/local/local-cluster.sh start
 ```
 
 En los dos casos la API queda en `http://127.0.0.1:8000`, con el head de Ray,
-4 workers y el coordinador. En Windows, abrir Docker Desktop congeló WSL varias
+los workers configurados y el coordinador. En Windows, abrir Docker Desktop congeló WSL varias
 veces: para el modo local, ciérralo antes.
 
 ## 2. Ejecutar un escenario
@@ -58,7 +60,8 @@ Los demás se lanzan igual, cambiando el nombre:
 - `head-loss.sh`: mata el head de Ray, observa 90 s y aplica la recuperación de
   `deploy/OPERATIONS.md`.
 
-Cada escenario restaura al terminar lo que rompió. El panel de `ui/` lanza los
+Cada escenario restaura lo que rompió al terminar normalmente. Si se interrumpe
+o falla antes de la restauración, revisa y recupera el clúster antes de continuar. El panel de `ui/` lanza los
 mismos escenarios con un botón ([ui/README.md](../../ui/README.md)).
 
 ## 3. Ejecutar una carga
@@ -98,11 +101,18 @@ La saturación necesita el clúster arrancado con un límite de 3 torneos activo
 bash experiments/campaign.sh docker
 ```
 
-`campaign.sh` arranca y para el clúster, ejecuta la matriz entera y guarda un
-registro en `experiments/results/campaign-<modo>-<fecha>.log`.
+`campaign.sh` detiene cualquier clúster del proyecto existente, lo recrea con
+la configuración de workers vigente, ejecuta la matriz entera y guarda un
+registro en `experiments/results/campaign-<modo>-<fecha>.log` y lo detiene al
+final. Los workers añadidos manualmente no sobreviven a esa recreación: fija
+`TM_WORKERS` antes de ejecutar para incluir la cantidad que quieras medir.
+Un escenario fallido produce un código final distinto de cero.
 
 - Repeticiones en Docker: 5 en worker-loss, la partición y las cargas; 3 en el
   resto.
+- Para una pasada de comprobación, antepón
+  `TM_CAMPAIGN_KEY_REPS=1 TM_CAMPAIGN_REPS=1`; esto reduce repeticiones, no
+  sustituye una campaña de medición de variabilidad.
 - Con `local` en vez de `docker`: una ejecución de cada escenario, sin la
   partición.
 

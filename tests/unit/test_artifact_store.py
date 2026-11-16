@@ -157,7 +157,7 @@ def test_execution_uses_verified_private_copies_and_cleans_them(tmp_path, monkey
     store = FileArtifactStore(tmp_path)
     digest = store.put(b"# bot\n")
     paths = []
-    sentinel = object()
+    sentinel = Mock(kind=OutcomeKind.COMPLETED, reason="normal")
 
     def run(spec, commands, **kwargs):
         for command in commands:

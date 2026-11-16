@@ -12,7 +12,9 @@ el avance del torneo.
 **Decisión.** PostgreSQL guarda todo lo que importa: bots registrados, torneos,
 partidas, intentos con su generación, resultados, historial de eventos y claves
 de idempotencia. El coordinador solo mantiene en memoria lo que puede
-reconstruir; Ray y los workers no guardan nada.
+reconstruir; Ray y los workers mantienen estado transitorio de ejecución, sin autoridad
+sobre los resultados durables. Los bytes de los bots se guardan en el almacén
+de artefactos del coordinador; deben conservarse junto con PostgreSQL.
 
 **Por qué.** Una base transaccional da de serie lo que habría que construir a
 mano con estado en memoria o dentro de Ray: escrituras atómicas, bloqueo por
@@ -22,7 +24,7 @@ se sustituye en la Fase 2.
 **Consecuencias.**
 
 - Una respuesta (202, 201, 200 de cancelar) llega siempre después del commit:
-  lo confirmado sobrevive a cualquier reinicio.
+  lo confirmado sobrevive a reinicios que conserven la base y los artefactos.
 - Al arrancar, el coordinador reconstruye su trabajo desde la base.
 - `tm verify` puede comprobar cualquier ejecución a partir de lo guardado.
 - Presupone un único coordinador activo por base (no hay elección de líder).
@@ -74,8 +76,9 @@ la plataforma, que es lo que se conserva en la Fase 2.
 
 - Los reintentos, plazos y descartes son de la plataforma (D2), visibles en el
   historial.
-- Sustituir Ray en la Fase 2 solo afecta al adaptador: transporte, asignación,
-  membresía y parada.
+- Sustituir Ray en la Fase 2 exige implementar transporte, registro, latidos,
+  asignación y parada detrás de los puertos existentes, y repetir las pruebas
+  de contrato y de fallos para comprobar que conservan la semántica.
 - Hay que cubrir lo que Ray no detecta: un worker congelado o aislado lo
   resuelve el plazo propio del intento.
 - El head de Ray es un punto único de fallo con recuperación manual.
@@ -133,7 +136,7 @@ trabajo que no se puede atender.
 - El contrato pasó a la versión 1.1.0 (respuesta 429).
 - El ritmo queda limitado por la CPU de ese hilo: con partidas muy cortas (Nim),
   aceptar resultados lo saturaba (ver
-  [campaña, rendimiento](campaign/resultados.md#rendimiento-del-coordinador)).
+  [campaña, carga](campaign/resultados.md#carga-concurrente-y-saturación)).
 
 ## D6 — Evidencia del cliente y `tm verify` como verificador independiente
 

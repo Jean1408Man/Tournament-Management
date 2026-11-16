@@ -14,7 +14,8 @@ modo solos (`TM_SCENARIO_MODE=docker|local` lo fuerza).
 - **`worker-partition.sh` — corte de red (solo Docker).** Saca de la red al worker
   de una partida durante 60 s, comprueba que de verdad no llega al coordinador
   ni al head, y lo reconecta. Se espera: ninguna derrota, un único resultado
-  aceptado (en otro worker) y lo que llegue tarde descartado. Anota si Ray
+  aceptado. Puede aceptarse el intento original si aún es vigente; si fue
+  sustituido, su resultado tardío debe descartarse. Anota si Ray
   readmitió el worker y después lo reinicia.
 - **`worker-pause.sh` — worker congelado.** Pausa el worker de una partida 100 s
   (o 40 s con `TM_PAUSE_SECONDS=40`). Se espera: con 100 s vence el plazo del
@@ -31,8 +32,8 @@ modo solos (`TM_SCENARIO_MODE=docker|local` lo fuerza).
 - **`cancelled-tournament.sh` — torneo cancelado.** Cancela un torneo con partidas
   en curso, mata un worker e inyecta un resultado. Se espera: todo queda
   `cancelled`, no se emiten intentos nuevos y el resultado se descarta.
-- **`faulty-bot.sh` — bots defectuosos.** Un torneo por cada bot de
-  `bots/faulty/` contra el óptimo. Se espera: el defectuoso pierde en un único
+- **`faulty-bot.sh` — bots defectuosos.** Seis casos seleccionados de
+  `bots/faulty/` contra el óptimo; no incluye `memory_hog`. Se espera: el defectuoso pierde en un único
   intento (`bot_failure`) y los workers siguen sanos.
 - **`head-loss.sh` — pérdida del head de Ray.** Mata el head, observa 90 s y
   aplica la recuperación de `deploy/OPERATIONS.md`. Se espera: no se acepta nada
@@ -94,3 +95,18 @@ un endpoint) y `summarize.py`.
 
 Un solo equipo: no hay pérdida de máquina física ni red real entre nodos. La
 partición solo existe en Docker (sin root no se aísla la red de un proceso).
+
+## Relación con la orientación del curso
+
+La [orientación P03](../../docs/P03_Plataforma_distribuida_de_ejecucion_de_torneos.md)
+exige continuidad ante pérdida de worker, distinción entre fallo del bot y de
+infraestructura, prevención de duplicados, estado durable y torneos concurrentes.
+Los escenarios concretos son la forma elegida por el equipo de comprobarlo.
+
+La corrección exige como máximo un resultado aceptado por partida y ninguna
+derrota atribuida a infraestructura. La terminación requiere capacidad sana,
+persistencia disponible y presupuesto de reintentos; el head necesita recuperación
+manual. Una partida puede quedar bloqueada si esas condiciones no se cumplen.
+Las duraciones y la cantidad de workers son parámetros de cada experimento,
+no garantías del contrato. Los resultados observados están en
+[la campaña](../../doc/campaign/resultados.md).

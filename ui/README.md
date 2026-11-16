@@ -8,10 +8,10 @@ instala nada, no toca `src/` ni el contrato de la API.
 
 Se arranca en el mismo sitio que el clúster:
 
-- **Docker**: desde Git Bash en Windows (o Linux), en la raíz del repositorio:
+- **Docker**: desde Bash en Linux o macOS, o desde WSL/Git Bash en Windows, en la raíz del repositorio:
 
   ```bash
-  python ui/server.py
+  TM_UI_MODE=docker python3 ui/server.py
   ```
 
 - **Local**: dentro de WSL, en la misma carpeta desde la que arrancaste el
@@ -25,12 +25,14 @@ Se arranca en el mismo sitio que el clúster:
   `TM_VENV`, si no en `UV_PROJECT_ENVIRONMENT` (donde lo deja `uv sync` si lo
   tienes definido) y si no en `.venv`.
 
+En Git Bash, si el ejecutable se llama `python`, úsalo en lugar de `python3`.
+
 Imprime una URL con un token (`http://127.0.0.1:8765/?token=…`): ábrela en el
 navegador. El token cambia en cada arranque. No arranques dos paneles en el mismo
 puerto, uno en Windows y otro en WSL: el navegador llega al de Windows y responde
 "token incorrecto" con la URL del otro. En Windows el modo es siempre
-Docker; en Linux o WSL es Docker si el contenedor `tm-coordinator` está en marcha
-y local si no. Variables: `TM_UI_MODE` (`docker` o `local`) fuerza el modo,
+Docker; en Linux o WSL se usa un clúster local activo si existe y, en otro caso,
+Docker cuando está disponible. Variables: `TM_UI_MODE` (`docker` o `local`) fuerza el modo,
 `TM_UI_PORT` cambia el puerto (8765) y `TM_API` la dirección de la API
 (`http://127.0.0.1:8000`).
 
@@ -40,19 +42,26 @@ Desktop cerrado mientras corre el clúster local de WSL: los workers se ven,
 porque vienen de la API, pero torneos, partidas, logs y órdenes fallan. La
 solución es arrancar el panel dentro de WSL con `TM_UI_MODE=local`.
 
+Si el clúster está apagado o aún arrancando, los indicadores muestran `–` y los
+paneles de datos muestran un estado vacío. Si quedaron contenedores Docker
+detenidos, pulsa **Parar** para retirarlos antes de **Arrancar**; los volúmenes
+con los datos se conservan.
+
 ## Paneles
 
-Arriba, cinco cifras: workers disponibles, ocupación, torneos activos, partidas en
-curso y reintentos de los torneos listados.
+Arriba, cinco cifras: workers disponibles, ocupación, torneos activos, workers
+ocupados y reintentos de los torneos listados.
 
 - **Workers**: una tarjeta por worker con su estado (`available` en verde,
   `suspected` parpadeando en ámbar, `lost` o caído en gris) y una barra de
   ocupación. Elige uno para ver su log.
 - **Torneos**: los activos y los últimos 10 terminados, con bots, una barra de
-  partidas hechas, las partidas en curso y los reintentos. Elige uno para ver sus
+  partidas hechas, los intentos sin confirmar y los reintentos. Elige uno para ver sus
   eventos.
-- **Partidas en ejecución**: cada intento en curso con su torneo, bots,
-  generación (más de 1 significa reintento), worker y desde hace cuánto.
+- **Intentos sin confirmar**: intentos emitidos que PostgreSQL aún no ha cerrado,
+  con su torneo, bots, generación, worker y antigüedad. Pueden superar el número
+  de workers: algunos ya terminaron en el worker y esperan que el coordinador
+  confirme su resultado. La ocupación y «workers ocupados» vienen de Ray.
 - **Eventos**: el flujo de eventos del torneo elegido, en vivo, como línea de
   tiempo: `+` creado o emitido, `→` enviado a un worker, `✓` aceptado, `✕` fallo
   o descarte, `⊘` cancelación.
@@ -93,6 +102,20 @@ Los torneos y las partidas salen de una consulta de solo lectura a PostgreSQL. L
 demás sale de la API pública y de los logs (`docker logs` o
 `~/.local/share/tournament-management/logs/`). Los datos se refrescan cada 2 s.
 
+En `ui/index.html`, `setInterval(tick, 2000)` fija esos 2 segundos. La lista de
+órdenes se actualiza cada 5 s; los eventos y los logs llegan por una conexión
+continua. En la carga rápida, dos refrescos pueden mostrar estados distintos
+porque la API de workers y PostgreSQL se consultan por separado.
+
+Cada worker registra tres momentos por intento: recepción, bots descargados y
+verificados, y resultado producido (tipo, motivo y duración). Si falla la
+preparación, registra el fallo. El coordinador registra el envío al worker,
+aceptación o descarte del resultado y fallos o plazos vencidos. Las líneas
+incluyen identificadores de partida e intento para seguir el mismo trabajo en
+ambos procesos. El panel de logs muestra las últimas 200 líneas de cada
+contenedor y continúa con las nuevas; las partidas anteriores se consultan en
+**Eventos** y en la evidencia de `experiments/results/`.
+
 ## Manual de las órdenes
 
 Las órdenes están en el panel **Ejecuciones**, en pestañas (Clúster, Workers,
@@ -107,8 +130,7 @@ ejecución en curso. "Parar" y "Provocar fallo" piden confirmación.
 
 Antes que nada, el clúster tiene que estar arrancado.
 
-- **Arrancar**: levanta PostgreSQL, el head de Ray, 4 workers (`tm-worker-1` a
-  `tm-worker-4`) y el coordinador. Tarda entre 1 y 2 minutos. En Docker equivale
+- **Arrancar**: levanta PostgreSQL, el head de Ray, los workers configurados y el coordinador. Tarda entre 1 y 2 minutos. En Docker equivale
   a `TM_BACKEND=ray bash deploy/docker/start-cluster.sh`; en local, a
   `bash deploy/local/local-cluster.sh start`.
 - **Parar**: detiene todo. Los torneos guardados se conservan para el próximo
@@ -119,15 +141,14 @@ Antes que nada, el clúster tiene que estar arrancado.
 ### Workers
 
 Cada worker es una máquina (un contenedor o un proceso) que juega partidas, una
-a la vez. El clúster arranca con 4 (`tm-worker-1` a `tm-worker-4`). Los
+a la vez. La cantidad inicial se configura con `TM_WORKERS` (o `TM_LOCAL_WORKERS` en local). Los
 selectores solo ofrecen lo que tiene sentido con los workers de ese momento, y se
 actualizan solos cada 5 s.
 
-- **Añadir worker**: arranca el siguiente número libre (al principio
-  `tm-worker-5`; el panel acepta hasta `tm-worker-16`) y lo une al clúster.
+- **Añadir worker**: arranca el siguiente número libre (el panel acepta nombres hasta `tm-worker-16`) y lo une al clúster.
   - Qué verás: en unos segundos aparece su tarjeta en `available`.
   - Resultado: el coordinador ya puede darle partidas, así que caben más a la
-    vez. Se nota en una carga: hasta 5 partidas en curso en vez de 4.
+    vez. Se nota en una carga: una partida simultánea adicional por worker, dentro del límite global.
 - **Provocar fallo**: mata de golpe un worker que esté en marcha, como si se
   apagara la máquina. Lo que pasa depende de si estaba jugando:
   - **Sin partidas en curso**: nadie lo nota al momento. Cuando Ray detecta que
@@ -135,7 +156,7 @@ actualizan solos cada 5 s.
     coordinador deja de contar con él.
   - **Con una partida en curso**: el intento termina como fallo de
     infraestructura, el worker pasa a `suspected` y la partida se repite en otro
-    worker con generación 2 (en **Partidas en ejecución** sale "reintento 2").
+    worker con generación 2 (en **Intentos sin confirmar** sale "reintento 2").
     Ningún bot pierde por ello.
   - En los dos casos el worker no vuelve solo: queda caído hasta que lo recuperes.
 - **Recuperar worker**: vuelve a arrancar un worker caído, sea por "Provocar
@@ -175,8 +196,9 @@ y `tm verify`. Código 0 si todo cuadra. La evidencia queda en
 Cada escenario prepara su propio torneo con bots lentos, provoca un fallo
 concreto en el momento justo, comprueba lo que debe pasar y deja la evidencia en
 `experiments/results/<escenario>-<fecha>/`. Termina con código 0 si todas las
-comprobaciones salen `OK`. Duran de 1 a 3 minutos. Al terminar, el escenario
-restaura lo que rompió. Mientras corre, los paneles muestran el fallo en vivo:
+comprobaciones salen `OK`. Duran de 1 a 3 minutos. Al terminar normalmente, el escenario
+restaura lo que rompió. Si se interrumpe o falla antes de restaurarlo, comprueba
+el estado y recupera los componentes afectados antes de la siguiente prueba. Mientras corre, los paneles muestran el fallo en vivo:
 elige su torneo (empieza por `scn-`) para ver los eventos.
 
 - **cancelled-tournament**: cancela un torneo con partidas en marcha, mata un
@@ -186,9 +208,9 @@ elige su torneo (empieza por `scn-`) para ver los eventos.
   a arrancar. Lo ya aceptado se mantiene, lo que estaba en curso se repite y el
   cliente no pierde ningún evento.
 - **faulty-bot**: enfrenta cada bot defectuoso de `bots/faulty/` contra el
-  óptimo. Hay siete: hace una jugada ilegal, escribe basura, consume demasiada
-  memoria, se cierra antes de tiempo, inunda stderr, no responde a tiempo o
-  escribe demasiado. El defectuoso pierde en un
+  óptimo. Hay seis casos: jugada ilegal, salida inválida, cierre prematuro,
+  inundación de stderr, demora excesiva y exceso de salida. El escenario no
+  incluye `memory_hog`. El defectuoso pierde en un
   único intento y los workers siguen sanos.
 - **head-loss**: mata el head de Ray, observa 90 s y aplica la recuperación de
   `deploy/OPERATIONS.md`. No se acepta nada mientras falta el head; después, el
@@ -202,8 +224,9 @@ elige su torneo (empieza por `scn-`) para ver los eventos.
   y la restablece. Hay un único resultado aceptado, en otro worker, y lo que
   llegue tarde se descarta.
 - **worker-pause** y **worker-pause (40 s)**: congelan el worker de una partida
-  100 s o 40 s. Con 100 s vence el plazo del intento; con 40 s el árbitro detecta
-  la congelación. En los dos casos la partida se repite, sin derrotas.
+  100 s o 40 s. Con 100 s vence el plazo del intento; con 40 s puede detectar
+  la congelación y reintentar, o terminar normalmente si ningún plazo venció.
+  La pausa no debe causar una derrota del bot.
 
 Qué hace cada uno por dentro: `experiments/scenarios/README.md`.
 
@@ -216,14 +239,15 @@ corrieron a la vez y cuántos le tocaron a cada worker, y pasa `tm verify`.
 
 - **carga-lenta**: un round-robin de 6 bots, dos eliminaciones de 4 y una de 2,
   todos con `slow.py` (piensa despacio) y montones `[5,5,5]`. Son 22 partidas
-  largas: sirve para ver los 4 workers ocupados a la vez durante unos 50 s.
+  largas: sirve para ver varios workers ocupados a la vez; la duración depende de la capacidad.
 - **carga-nim**: un round-robin de 16 bots y dos eliminaciones de 8, con
   `optimal.py` (juega perfecto y rápido). Son 134 partidas cortas: mide cuánto
   aguanta el coordinador aceptando resultados. Tarda entre 20 s (local) y 90 s
   (Docker).
 
 Mientras corre, el panel **Torneos** se llena de torneos `load-…` en `running` y
-el de **Partidas en ejecución** muestra hasta 4 a la vez.
+el contador **Workers ocupados** refleja los workers que estén ejecutando partidas. La lista
+**Intentos sin confirmar** puede mostrar más mientras se guardan resultados.
 
 ### Verificar
 

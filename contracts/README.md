@@ -21,7 +21,7 @@ Todas las rutas de esta tabla usan el prefijo `/api/v1`.
 | GET /workers | 200; identidades y capacidad observadas por el backend configurado |
 
 `/health` indica vida del proceso. `/ready` comprueba disco escribible,
-PostgreSQL con las tres migraciones y coordinador operativo; responde 503 si
+PostgreSQL con el esquema requerido y coordinador operativo; responde 503 si
 falla alguna. Con Ray, la falta de workers no lo cambia: se ve en `/workers`.
 
 ## Registro e idempotencia
