@@ -1,10 +1,9 @@
-"""Generador de carga de 5.1 (E1.9): solo HTTP y biblioteca estándar.
+"""Generador de carga: solo HTTP y biblioteca estándar.
 
-Registra los bots, crea una mezcla de torneos a la vez (reintentando los 429
-según Retry-After), escucha el SSE de cada uno en vivo y guarda en <out>/:
-  client.jsonl   lo que recibió el cliente, con su hora (I6 de tm verify)
+Registra los bots, crea una mezcla de torneos a la vez, escucha el SSE de cada uno en vivo y guarda en <out>/:
+  client.jsonl   lo que recibió el cliente, con su hor
   <t>.tournament.json, <t>.matches.json, <t>.events.json   evidencia final
-  metrics.json   métricas por torneo y globales (E1.8)
+  metrics.json   métricas por torneo y globales
   workers.jsonl  muestras de /api/v1/workers cada 0,5 s (intentos simultáneos)
 Las horas del servidor (occurred_at) pueden saltar: el reloj de la VM de Docker
 se corrige a saltos de ~24 s. Las latencias usan la hora de recepción del
@@ -14,7 +13,7 @@ Las métricas usan PYTHONPATH=src (formatos del servidor, sin dependencias).
 Uso: PYTHONPATH=src python experiments/tools/load.py --out DIR \\
        --mix round_robin:8x1,elimination:4x3 [--bot slow] [--api URL]
 `dump` también lo usa lib.sh: python experiments/tools/load.py dump API TORNEO DIR
-Los escenarios de fallo (5.3, E3.7) crean con `create API DIR CUERPO` y escuchan
+Los escenarios de fallo crean con `create API DIR CUERPO` y escuchan
 con `follow API DIR TORNEO`; cada torneo deja client-<torneo>.jsonl.
 `metrics DIR` recalcula metrics.json de una carpeta ya guardada.
 """

@@ -1,4 +1,4 @@
-"""Inyección de laboratorio (4.4, D4.4 b): entrega tarde el resultado de un intento.
+"""Inyección de laboratorio: entrega tarde el resultado de un intento.
 
 Construye un resultado deportivo válido para un intento ya existente y lo pasa
 por el mismo código de aceptación que usa el coordinador

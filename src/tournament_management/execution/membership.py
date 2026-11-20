@@ -1,4 +1,4 @@
-"""Membresía propia de workers: available, suspected y lost (etapa 4.3, D3.1).
+"""Membresía propia de workers: available, suspected y lost.
 
 Lógica pura, sin middleware ni reloj real: el backend Ray le pasa lo que ve y
 lo que observa; el backend nativo de la Fase 2 podrá pasarle sus heartbeats.

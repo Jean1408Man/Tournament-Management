@@ -123,7 +123,7 @@ def readiness(settings: Settings, services: ApiServices | None) -> dict:
         except OSError:
             checks["database"] = "unavailable"
     # Con Ray, listo significa conexión abierta y coordinador sano; la falta de
-    # workers no lo cambia y se observa en /api/v1/workers (D1.7).
+    # workers no lo cambia y se observa en /api/v1/workers.
     if services and services.coordinator and services.coordinator.healthy:
         checks["execution"] = "ready"
     return checks

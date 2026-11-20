@@ -1,4 +1,4 @@
-"""Coordinador de varios torneos e intentos simultáneos (5.1, E1.1–E1.4).
+"""Coordinador de varios torneos e intentos simultáneos.
 
 Un único hilo y una tabla de intentos en vuelo. Las partidas simultáneas las
 dan los workers; este hilo es el único que emite, envía, recoge y confirma.

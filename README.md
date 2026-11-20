@@ -142,15 +142,9 @@ Los datos se conservan hasta el próximo arranque.
 
 ## Dónde seguir
 
-- [docs/architecture.md](docs/architecture.md): roles, procesos y quién posee cada estado.
-- [docs/api-contract.md](docs/api-contract.md) y [doc/semantics.md](doc/semantics.md): el contrato HTTP congelado.
-- [docs/bot-protocol.md](docs/bot-protocol.md): cómo escribir un bot.
-- [docs/docs_Rachel/garantias.md](docs/docs_Rachel/garantias.md): cada garantía con su evidencia.
 - [doc/decisiones.md](doc/decisiones.md): las seis decisiones de diseño que más pesan.
 - [doc/campaign/ejecutar.md](doc/campaign/ejecutar.md) y [doc/campaign/resultados.md](doc/campaign/resultados.md): cómo ejecutar la campaña de fallos y carga, y sus resultados.
-- [docs/middleware-map.md](docs/middleware-map.md): qué aporta Ray y qué sustituye la Fase 2.
 - [deploy/README.md](deploy/README.md) y [deploy/OPERATIONS.md](deploy/OPERATIONS.md): despliegue y operación.
-- [docs/docs_Rachel/historia-por-pasos.md](docs/docs_Rachel/historia-por-pasos.md): cómo se construyó, paso a paso.
 - [ui/README.md](ui/README.md): panel web para ver workers, torneos, partidas, eventos y logs, y lanzar escenarios.
 
 ## Desarrollo
@@ -189,8 +183,3 @@ ai_use:
     - independent verification of campaign evidence with tm verify
     - manual review of proposed changes
 ```
-
-Las propuestas de IA se tratan como hipótesis, parches o sugerencias que deben
-comprobarse mediante revisión, pruebas, experimentos y razonamiento. No se
-incluyen transcripciones completas. Durante la defensa, debemos poder explicar
-y modificar cualquier parte del trabajo asistida por IA.

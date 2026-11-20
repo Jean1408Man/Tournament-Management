@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Escenario head-loss (salida de la etapa 4: "la pérdida del head puede
+# Escenario head-loss ("la pérdida del head puede
 # interrumpir todo el clúster; documentar su recuperación"). Con una partida
 # lenta en curso se mata el head (tm-head en Docker, su proceso en modo local). Se observa durante TM_OBSERVE_SECONDS (90 s)
 # /ready, /workers, el torneo y el estado de los contenedores; después se aplica

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Escenario worker-partition (guía 5.3: "pérdida temporal de comunicación y
-# reparación"; E3.1 a, E3.2 a). Solo Docker (E3.3): sin root no se aísla la red de
+# Escenario worker-partition. Solo Docker: sin root no se aísla la red de
 # un proceso local. Con una partida lenta en curso se saca su worker de tm-net,
 # se COMPRUEBA que ya no llega al coordinador ni al head (una pausa no es una
 # partición), se observa TM_PARTITION_SECONDS (60 s) y se reconecta.
-# Hipótesis (08-plan-etapa-5.md): Ray da el nodo por muerto tras su plazo, el
+# Ray da el nodo por muerto tras su plazo, el
 # intento falla o vence nuestro plazo y se reintenta en otro worker, sin derrota;
 # lo tardío se descarta. Al reconectar se OBSERVA si Ray readmite el worker o
 # hace falta reiniciarlo.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clúster sin Docker (etapa 4.4): PostgreSQL propio, head y workers de Ray y el
+# Clúster sin Docker: PostgreSQL propio, head y workers de Ray y el
 # coordinador como procesos de Linux/WSL. Mismos parámetros que start-cluster.sh.
 # Los datos persisten en TM_LOCAL_HOME (~/.local/share/tournament-management)
 # entre stop y start; solo `reset` los borra. Guía: deploy/ARRANQUE.md.
@@ -19,7 +19,7 @@ API_PORT="${TM_API_PORT:-8000}" CLIENT_PORT="${TM_LOCAL_RAY_CLIENT_PORT:-10001}"
 PG_PORT="${TM_LOCAL_PG_PORT:-5433}" WORKERS="${TM_LOCAL_WORKERS:-${TM_WORKERS:-4}}"
 DB_URL="postgresql:///tournament_management?host=$RUN&port=$PG_PORT&user=tm"
 API="http://127.0.0.1:$API_PORT"
-# Misma mitigación gRPC que el despliegue Docker (decisión 1.15).
+# Misma mitigación gRPC que el despliegue Docker.
 export GRPC_POLL_STRATEGY=poll GRPC_ENABLE_FORK_SUPPORT=true RAY_USAGE_STATS_ENABLED=0
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
@@ -115,7 +115,7 @@ worker_start() {  # nombre
   local attempt
   for attempt in 1 2; do
     : > "$LOGS/$1.log"
-    # Sin volumen compartido: descarga los bots del coordinador con el token (4.2).
+    # Sin volumen compartido: descarga los bots del coordinador con el token.
     TM_ARTIFACT_URL="$API" TM_INTERNAL_TOKEN="$(cat "$RUN/token")" \
       TM_WORKER_LOG_PATH="$LOGS/$1.log" \
       start_bg "$1" "$VENV/bin/python" deploy/local/local_cluster.py worker \
@@ -209,7 +209,7 @@ case "${1:-}" in
     ;;
   recover)
     # Equivale al procedimiento de OPERATIONS.md tras perder el head: head nuevo,
-    # workers que se conectan a él y coordinador reiniciado (recuperación de 3.4).
+    # workers que se conectan a él y coordinador reiniciado.
     names=$(workers_running); [[ -n "$names" ]] || names=$(seq -f 'tm-worker-%g' 1 "$WORKERS")
     stop_one coordinator
     for name in $names; do stop_one "$name"; done

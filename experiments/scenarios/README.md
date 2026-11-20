@@ -98,7 +98,7 @@ partición solo existe en Docker (sin root no se aísla la red de un proceso).
 
 ## Relación con la orientación del curso
 
-La [orientación P03](../../docs/P03_Plataforma_distribuida_de_ejecucion_de_torneos.md)
+La orientacion
 exige continuidad ante pérdida de worker, distinción entre fallo del bot y de
 infraestructura, prevención de duplicados, estado durable y torneos concurrentes.
 Los escenarios concretos son la forma elegida por el equipo de comprobarlo.

@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Escenario worker-pause (guía 4.4: "pausar un worker y reanudarlo después de
-# expirar su intento"). Congela el worker de una partida lenta durante el plazo
+# Escenario worker-pause. Congela el worker de una partida lenta durante el plazo
 # del intento + 10 s (TM_PAUSE_SECONDS lo cambia). Ray NO da por muerto un worker
 # pausado: es nuestro plazo el que vence; se reintenta en otro worker y lo que
 # llegue del intento viejo queda descartado.
 # Variante corta (TM_PAUSE_SECONDS=40, menos que el plazo): el árbitro detecta que
 # estuvo congelado ⇒ infraestructura (referee_stalled) y reintento, nunca derrota;
 # si la pausa cae con la jugada ya recibida, no vence ningún plazo y la partida
-# termina con normalidad (E3.10: ambos desenlaces valen y se registra cuál).
-# No es una partición de red (eso es worker-partition.sh).
+# termina con normalidad.
 source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"
 scenario_start worker-pause
 pause_seconds="${TM_PAUSE_SECONDS:-$(( $(attempt_timeout_seconds) + 10 ))}"

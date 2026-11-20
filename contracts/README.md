@@ -1,8 +1,7 @@
 # Contrato HTTP v1
 
 Contrato de máquina: [openapi-v1.json](openapi-v1.json).
-La aplicación publica el mismo documento en `/api/v1/openapi.json` y su interfaz
-en `/docs`. Regenerar con `uv run python contracts/export-openapi.py` y verificar
+La aplicación publica el mismo documento en `/api/v1/openapi.json`. Regenerar con `uv run python contracts/export-openapi.py` y verificar
 con `uv run pytest tests/unit/test_api_contract.py -q`. No requiere servidor ni BD.
 
 ## Recursos

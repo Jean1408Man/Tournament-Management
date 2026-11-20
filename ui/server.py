@@ -1,9 +1,9 @@
-"""Panel de observación del clúster (bloque G, E4.15 c).
+"""Panel de observación del clúster.
 
 Sirve ui/index.html en 127.0.0.1 y le da, todo de solo lectura: workers (API
 pública), torneos y partidas en ejecución (consulta a PostgreSQL), eventos de un
 torneo (SSE público reenviado) y logs (docker logs o los archivos del modo local).
-Además lanza una lista cerrada de órdenes (E4.16 b), una a la vez, con su salida
+Además lanza una lista cerrada de órdenes, una a la vez, con su salida
 en vivo. Solo biblioteca estándar: vale con el Python de Windows y el de WSL.
 
 Uso: python ui/server.py   (imprime la URL con el token de este arranque)

@@ -1,4 +1,4 @@
-"""Conexión Ray Client del coordinador; no crea ni busca un clúster local."""
+"""Conexión Ray Client del coordinador."""
 
 from tournament_management.execution.backend import ExecutionError
 

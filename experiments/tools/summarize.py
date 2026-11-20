@@ -1,4 +1,4 @@
-"""Resumen de una campaña de 5.3: aprobadas, tm verify, mediana y rango.
+"""Resumen de una campaña: aprobadas, tm verify, mediana y rango.
 
 Uso: python experiments/tools/summarize.py experiments/results/campaign-<modo>-<fecha>.log
 Toma las carpetas de experiments/results/ creadas entre el inicio y el fin del

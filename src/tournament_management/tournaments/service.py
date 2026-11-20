@@ -93,7 +93,7 @@ class PersistentTournamentService:
     def accept(self, outcome: AttemptOutcome) -> bool:
         with self.work_factory() as work:
             if not work.matches.try_accept(outcome):
-                # Un rechazo deja rastro (4.4, D4.1): duplicados y resultados
+                # Un rechazo deja rastro: duplicados y resultados
                 # viejos son evidencia de que el fencing por generación actuó.
                 reason = work.matches.rejection_reason(outcome)
                 try:

@@ -21,7 +21,7 @@ class BotFault(Exception):
 
 
 class RefereeStalled(OSError):
-    """El árbitro no se ejecutó durante la partida (worker congelado, 4.4 D4.8).
+    """El árbitro no se ejecutó durante la partida.
 
     Sus plazos dejan de medir al bot: un timeout es un fallo de infraestructura.
     """
@@ -85,7 +85,7 @@ class BotPipes:
     def read(
         self, player: int, deadline: float, cancel: threading.Event | None,
     ) -> dict:
-        # Diagnóstico (4.4): cada vuelta espera ≤ 50 ms. Un salto mucho mayor entre
+        # Diagnóstico: cada vuelta espera ≤ 50 ms. Un salto mucho mayor entre
         # dos vueltas significa que el propio árbitro no se ejecutó (worker congelado).
         started = last = time.monotonic()
         max_gap = 0.0

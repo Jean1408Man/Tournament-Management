@@ -1,4 +1,4 @@
-"""Descarga de bots por hash contra un servidor HTTP real (etapa 4.2)."""
+"""Descarga de bots por hash contra un servidor HTTP real."""
 
 import hashlib
 import threading

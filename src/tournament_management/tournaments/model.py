@@ -1,6 +1,6 @@
 """Definición durable y reconstrucción determinista a partir de resultados.
 
-Se reutilizan los formatos deportivos de la etapa 2: la base no contiene otra
+La base no contiene otra
 implementación de las reglas. El orden de inscripción y las semillas forman
 parte de la definición inmutable, de modo que releerla produce el mismo cuadro.
 """

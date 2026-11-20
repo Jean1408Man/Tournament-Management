@@ -1,4 +1,4 @@
-"""Backend Ray con un Ray falso: casos raros y deterministas (D1.5).
+"""Backend Ray con un Ray falso: casos raros y deterministas.
 
 El comportamiento con Ray real se prueba en tests/integration/test_ray_execution.py.
 """

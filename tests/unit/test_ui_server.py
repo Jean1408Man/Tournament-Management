@@ -1,4 +1,4 @@
-"""Panel de ui/ (bloque G): lista cerrada de órdenes y controles de acceso."""
+"""Panel de ui: lista cerrada de órdenes y controles de acceso."""
 
 import importlib.util
 import json

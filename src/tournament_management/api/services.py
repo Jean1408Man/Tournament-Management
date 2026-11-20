@@ -25,7 +25,7 @@ class ApiServices:
     max_upload_bytes: int
     backend: ExecutionBackend | None = None
     coordinator: TournamentCoordinator | None = None
-    # Descarga interna de bots para los workers (4.2); token vacío = desactivada.
+    # Descarga interna de bots para los workers; token vacío = desactivada.
     artifacts: ArtifactReader | None = None
     internal_token: str = ""
 

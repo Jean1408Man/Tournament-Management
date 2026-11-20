@@ -2,7 +2,7 @@
 
 Usa Ray Client como el coordinador desplegado. Los nodos son procesos locales:
 quitar uno simula que un worker muere. Los workers descargan los bots de la ruta
-interna real del coordinador (4.2). Los casos raros viven en
+interna real del coordinador. Los casos raros viven en
 tests/unit/test_ray_backend.py con un Ray falso.
 """
 

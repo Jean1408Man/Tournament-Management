@@ -4,7 +4,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 require_docker
 # Validar todos los objetivos antes de detener cualquiera.
 targets=()
-# También los añadidos con add-worker.sh (4.3): con un token viejo se
+# También los añadidos con add-worker.sh: con un token viejo se
 # reconectarían al head del próximo arranque.
 mapfile -t workers < <(cluster_workers | sort -t- -k3,3nr)
 for name in tm-coordinator "${workers[@]}" tm-head tm-postgres; do

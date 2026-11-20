@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Añade un worker al clúster en marcha (4.3), con la misma imagen y token que el
+# Añade un worker al clúster en marcha, con la misma imagen y token que el
 # coordinador. Uso: bash deploy/docker/add-worker.sh tm-worker-N
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"

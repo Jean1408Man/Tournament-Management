@@ -1,4 +1,4 @@
-"""Puerto de ejecución: local hoy, Ray en la etapa 4 y nativo en la Fase 2."""
+"""Puerto de ejecución: local hoy y nativo en la Fase 2."""
 
 from typing import Protocol
 

@@ -1,4 +1,4 @@
-"""Plazos del intento: fórmula documentada que avisa sin impedir el arranque (D3.4)."""
+"""Plazos del intento: fórmula documentada que avisa sin impedir el arranque."""
 
 import logging
 

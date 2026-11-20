@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Utilidades comunes de los escenarios de fallo (etapa 4.4).
+# Utilidades comunes de los escenarios de fallo.
 # Cada escenario guarda su evidencia en experiments/results/<escenario>-<fecha>/
 # y termina con código distinto de 0 si alguna comprobación falla.
 # Modo Docker (deploy/docker/start-cluster.sh con TM_BACKEND=ray) o local
@@ -27,7 +27,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 RESULTS=""
 FAILURES=0
 COMMAND="$0${*:+ $*}"  # lib.sh se carga con source: $@ son los argumentos del escenario
-FOLLOWERS=()           # clientes que escuchan cada torneo creado (I6, E3.7)
+FOLLOWERS=()           # clientes que escuchan cada torneo creado
 
 scenario_start() {  # nombre
   RESULTS="experiments/results/$1-$STAMP"
@@ -148,7 +148,7 @@ dump() {  # torneo → guarda torneo, todas las partidas y el historial completo
   "$PY" experiments/tools/load.py dump "$API" "$1" "$RESULTS"
 }
 
-verify_evidence() {  # tm verify (5.2) sobre todo lo guardado; informe en verify.json
+verify_evidence() {  # tm verify sobre todo lo guardado; informe en verify.json
   local status
   set +e
   PYTHONPATH=src PYTHONIOENCODING=utf-8 "$PY" -m tournament_management verify \
@@ -218,7 +218,7 @@ worker_restore() {  # vuelve a arrancar el worker y espera a verlo available con
     $LOCAL_CLUSTER restore "$name" >/dev/null
   fi
   # available no basta: tras un reinicio Ray lista ~15 s el nodo viejo y el nuevo,
-  # y un intento enviado al viejo falla con TaskUnschedulableError (E1.14).
+  # y un intento enviado al viejo falla con TaskUnschedulableError.
   while ((SECONDS < deadline)); do
     curl -s "$API/api/v1/workers" | grep -q "\"worker_id\":\"$name\",\"status\":\"available\"" &&
       ray_settled && return 0

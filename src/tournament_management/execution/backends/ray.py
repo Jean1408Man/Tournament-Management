@@ -1,4 +1,4 @@
-"""Backend Ray del puerto ExecutionBackend (etapa 4.1).
+"""Backend Ray del puerto ExecutionBackend.
 
 El adaptador elige el worker de cada intento (afinidad estricta) y Ray solo
 transporta la tarea y avisa de caídas. Ray no reintenta: un intento perdido
