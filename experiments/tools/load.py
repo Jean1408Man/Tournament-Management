@@ -1,7 +1,8 @@
 """Generador de carga: solo HTTP y biblioteca estándar.
 
-Registra los bots, crea una mezcla de torneos a la vez, escucha el SSE de cada uno en vivo y guarda en <out>/:
-  client.jsonl   lo que recibió el cliente, con su hor
+Registra los bots, crea una mezcla de torneos a la vez, escucha el SSE de cada
+uno en vivo y guarda en <out>/:
+  client.jsonl   lo que recibió el cliente, con su hora (I6 de tm verify)
   <t>.tournament.json, <t>.matches.json, <t>.events.json   evidencia final
   metrics.json   métricas por torneo y globales
   workers.jsonl  muestras de /api/v1/workers cada 0,5 s (intentos simultáneos)
