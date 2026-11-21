@@ -105,7 +105,7 @@ puede alimentar la misma membresía con latidos propios.
 
 ## D5 — Coordinador de un hilo, con turnos y admisión con 429
 
-**Problema.** Hasta la etapa 5 el sistema ejecutaba un intento a la vez y
+**Problema.** El sistema ejecutaba un intento a la vez y
 agotaba un torneo antes de empezar el siguiente. Hacía falta jugar varias
 partidas y varios torneos a la vez sin carreras entre comprobar un hueco y
 usarlo, y sin aceptar trabajo sin límite.

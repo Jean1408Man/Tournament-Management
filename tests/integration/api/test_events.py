@@ -48,9 +48,9 @@ def test_sse_disconnect_and_reconnect_while_tournament_is_running(api_factory):
 
     release = threading.Event()
 
-    def delayed(attempt, store, cancel=None):
+    def delayed(attempt, store, cancel=None, delay_ms=0):
         release.wait(timeout=5)
-        return run_registered_match(attempt, store, cancel=cancel)
+        return run_registered_match(attempt, store, cancel=cancel, delay_ms=delay_ms)
 
     api = api_factory(runner=delayed)
     api.register("a")

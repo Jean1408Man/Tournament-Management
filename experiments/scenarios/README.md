@@ -83,6 +83,10 @@ En Git Bash no se exporta `MSYS_NO_PATHCONV` para los escenarios: rompe
 - `TM_SCENARIO_PILES` (`[10,10,10]`): montones de las partidas lentas.
 - `TM_PAUSE_SECONDS` (plazo del intento + 10 s), `TM_PARTITION_SECONDS` (60),
   `TM_DOWN_SECONDS` (10), `TM_OBSERVE_SECONDS` (90): duraciones de cada fallo.
+  El plazo del intento que usa `TM_PAUSE_SECONDS` ya incluye la espera del worker.
+- La espera de laboratorio del clúster (`TM_WORKER_DELAY_MS`, 0) se fija al
+  arrancarlo y queda en `meta.json`. Los escenarios y la campaña se validaron con
+  0; con otra espera tardan más y `worker-partition` puede terminar por su otra rama.
 
 ## Utilidades (`experiments/tools/`)
 

@@ -33,7 +33,7 @@ class Slow:
         self.peak = 0
         self.started: list[str] = []
 
-    def __call__(self, attempt, store, cancel=None):
+    def __call__(self, attempt, store, cancel=None, delay_ms=0):
         with self.lock:
             self.running += 1
             self.peak = max(self.peak, self.running)
@@ -122,7 +122,7 @@ def test_retry_delay_does_not_stop_other_tournaments(api_factory, slots):
     slots(1)
     failed = set()
 
-    def execute(attempt, store, cancel=None):
+    def execute(attempt, store, cancel=None, delay_ms=0):
         if attempt.match.tournament_id == "flaky" and not failed:
             failed.add(attempt.attempt_id)
             return result(attempt, OutcomeKind.INFRASTRUCTURE_FAILURE)
@@ -144,7 +144,7 @@ def test_cancel_stops_every_attempt_of_that_tournament_only(api_factory, slots):
     stopped: list[str] = []
     started = threading.Semaphore(0)
 
-    def execute(attempt, store, cancel=None):
+    def execute(attempt, store, cancel=None, delay_ms=0):
         started.release()
         if attempt.match.tournament_id == "victim" and cancel.wait(5):
             stopped.append(attempt.attempt_id)
@@ -172,7 +172,7 @@ def test_cancel_stops_every_attempt_of_that_tournament_only(api_factory, slots):
 def test_admission_limit_answers_429_without_persisting_or_consuming_the_key(api_factory):
     release = threading.Event()
 
-    def execute(attempt, store, cancel=None):
+    def execute(attempt, store, cancel=None, delay_ms=0):
         release.wait(10)
         return result(attempt)
 

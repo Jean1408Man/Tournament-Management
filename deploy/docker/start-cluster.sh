@@ -87,7 +87,7 @@ docker run "${base[@]}" "${limits[@]}" --name tm-coordinator --hostname tm-coord
   --env TM_RAY_ADDRESS=ray://tm-head:10001 \
   --env "TM_DATABASE_URL=postgresql://tm:${TM_POSTGRES_PASSWORD}@tm-postgres:5432/tournament_management" \
   --env "TM_BACKEND=${TM_BACKEND:-local}" --env TM_HTTP_HOST=0.0.0.0 \
-  --env "TM_INTERNAL_TOKEN=$TM_INTERNAL_TOKEN" \
+  --env "TM_INTERNAL_TOKEN=$TM_INTERNAL_TOKEN" --env "TM_WORKER_DELAY_MS=$TM_WORKER_DELAY_MS" \
   "$image_id" coordinator
 wait_for "API del coordinador" docker exec tm-coordinator python -c \
   'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).read()'

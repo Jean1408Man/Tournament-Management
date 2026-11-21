@@ -6,6 +6,8 @@ from pathlib import Path
 
 # Margen del plazo del intento sobre partida + descargas (D3.4).
 ATTEMPT_MARGIN_MS = 10_000
+# Tope de la espera de laboratorio del worker antes de cada partida.
+MAX_WORKER_DELAY_MS = 60_000
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class Settings:
     artifact_url: str = ""
     internal_token: str = ""
     artifact_download_timeout_ms: int = 10000
+    worker_delay_ms: int = 0
 
     def __post_init__(self) -> None:
         if self.role not in {"coordinator", "ray-head", "ray-worker"}:
@@ -67,6 +70,8 @@ class Settings:
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"TM_{name.upper()} debe ser positivo")
+        if not 0 <= self.worker_delay_ms <= MAX_WORKER_DELAY_MS:
+            raise ValueError(f"TM_WORKER_DELAY_MS debe estar entre 0 y {MAX_WORKER_DELAY_MS}")
         if self.max_retries < 0 or self.retry_delay_ms < 0:
             raise ValueError("Reintentos y espera no pueden ser negativos")
         if not self.turn_timeout_ms <= self.match_timeout_ms < self.attempt_timeout_ms:

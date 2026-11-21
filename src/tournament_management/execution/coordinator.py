@@ -190,7 +190,7 @@ class TournamentCoordinator:
             tournament_id,
             attempt,
             retry=generation <= self.policy.max_retries,
-            deadline=time.monotonic() + self.policy.attempt_timeout_ms / 1000,
+            deadline=time.monotonic() + self.policy.attempt_deadline_ms / 1000,
         )
         with self._condition:
             if self.stopping.is_set():

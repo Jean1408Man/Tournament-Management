@@ -17,6 +17,13 @@ class ExecutionPolicy:
     retry_delay_ms: int
     capacity_wait_ms: int = 300_000
     max_running_attempts: int = 64
+    # Espera de laboratorio del worker antes de cada partida (TM_WORKER_DELAY_MS).
+    worker_delay_ms: int = 0
+
+    @property
+    def attempt_deadline_ms(self) -> int:
+        """Plazo real del intento: el configurado más la espera del worker."""
+        return self.attempt_timeout_ms + self.worker_delay_ms
 
     def attempt(self, match: MatchSpec, generation: int) -> AttemptSpec:
         return AttemptSpec(

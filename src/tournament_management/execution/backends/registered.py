@@ -23,6 +23,7 @@ def run_registered_match(
     *,
     worker_id: str = "local",
     cancel: threading.Event | None = None,
+    delay_ms: int = 0,
 ) -> AttemptOutcome:
     started = time.monotonic()
     worker_event("Intento recibido; preparando bots", attempt=attempt, worker_id=worker_id,
@@ -35,6 +36,26 @@ def run_registered_match(
         sources = tuple(store.get(value) for value in attempt.match.artifact_hashes)
         worker_event("Bots descargados y verificados", attempt=attempt, worker_id=worker_id,
                      elapsed_ms=round((time.monotonic() - started) * 1000))
+        if delay_ms:
+            # Espera de laboratorio (TM_WORKER_DELAY_MS): antes de arrancar los bots,
+            # así ningún reloj de turno o partida corre y una pausa aquí nunca es derrota.
+            worker_event("Espera de laboratorio antes de la partida", attempt=attempt,
+                         worker_id=worker_id, delay_ms=delay_ms)
+            if cancel is None:
+                time.sleep(delay_ms / 1000)
+            elif cancel.wait(delay_ms / 1000):
+                return AttemptOutcome(
+                    match_id=attempt.match.match_id,
+                    attempt_id=attempt.attempt_id,
+                    generation=attempt.generation,
+                    worker_id=worker_id,
+                    kind=OutcomeKind.INFRASTRUCTURE_FAILURE,
+                    winner_id="",
+                    reason="cancelled",
+                )
+            worker_event("Espera terminada; empieza la partida", attempt=attempt,
+                         worker_id=worker_id,
+                         elapsed_ms=round((time.monotonic() - started) * 1000))
         with TemporaryDirectory(prefix="tm-attempt-") as directory:
             commands = []
             for player, source in enumerate(sources):

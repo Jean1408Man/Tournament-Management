@@ -57,7 +57,9 @@ def application_services(settings: Settings) -> Iterator[ApiServices | None]:
 def _backend(settings: Settings, store: FileArtifactStore, connection):
     if connection is None:
         return LocalExecution(
-            lambda attempt, cancel: run_registered_match(attempt, store, cancel=cancel),
+            lambda attempt, cancel: run_registered_match(
+                attempt, store, cancel=cancel, delay_ms=settings.worker_delay_ms
+            ),
         )
     from tournament_management.execution.backends.ray import RayExecution
 

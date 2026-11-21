@@ -200,6 +200,7 @@ const withToken = (p) => p + (p.includes("?") ? "&" : "?") + "token=" + encodeUR
 let meta = null, metaKey = "", busy = false, activeTab = null;
 let selectedTournament = null, eventsSource = null, logsSource = null, runSource = null;
 const tournamentForm = { format: "round_robin", size: 4, bots: ["optimal", "random_bot"], piles: "5,5,5" };
+let startDelay = 0;  // segundos de espera del worker antes de cada partida (TM_WORKER_DELAY_MS)
 
 async function getJSON(path) {
   const response = await fetch(path, { headers: { "X-TM-UI-Token": token } });
@@ -392,6 +393,12 @@ $("log-level").onchange = () => {
 
 // --- Órdenes ---
 function argInput(c) {
+  if (c.arg === "delay") {
+    const delay = el("input", null, "mono", { type: "number", min: 0, max: 60, step: 1,
+      value: startDelay, title: "Espera (s) de cada worker antes de cada partida" });
+    delay.oninput = () => { startDelay = Number(delay.value); };
+    return delay;
+  }
   const select = el("select");
   const workers = meta.workers || [];
   if (c.arg === "worker-next") {
@@ -415,15 +422,16 @@ function commandCard(c) {
   const danger = /stop|fail/.test(c.id);
   const button = el("button", "Ejecutar", danger ? "danger" : "primary");
   button.dataset.run = "1";
+  if (c.arg === "delay") act.append(el("span", "espera (s)", "muted"));
   if (input) {
     act.append(input);
-    if (!input.options.length) {
+    if (input.tagName === "SELECT" && !input.options.length) {
       button.disabled = true;
       button.dataset.empty = "1";
       act.append(el("span", c.arg === "worker-down" ? "ninguno caído" : "ninguno", "muted"));
     }
   }
-  button.onclick = () => runCommand(c, input ? input.value : null);
+  button.onclick = () => runCommand(c, c.arg === "delay" ? startDelay : input ? input.value : null);
   act.append(button);
   card.append(act);
   return card;

@@ -274,9 +274,10 @@ db_scalar() {  # consulta SQL de solo lectura sobre la base del clúster
     "$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)/psql" "$LOCAL_DB" -Atc "$1"
   fi
 }
-attempt_timeout_seconds() {  # plazo del intento con el que corre el coordinador
-  local code='import os; from tournament_management.config import Settings; print(Settings.load({}, os.environ).attempt_timeout_ms // 1000)'
-  if [[ $MODE == docker ]]; then docker exec tm-coordinator python -c "$code"; else "$LOCAL_PY" -c "$code"; fi
+attempt_timeout_seconds() {  # plazo real del intento: el configurado + la espera del worker
+  local code='import os; from tournament_management.config import Settings; s = Settings.load({}, os.environ); print((s.attempt_timeout_ms + s.worker_delay_ms) // 1000)'
+  if [[ $MODE == docker ]]; then docker exec tm-coordinator python -c "$code"
+  else TM_WORKER_DELAY_MS="$(cat "$LOCAL_HOME/run/worker_delay_ms" 2>/dev/null || echo 0)" "$LOCAL_PY" -c "$code"; fi
 }
 inject_late() {  # attempt_id → JSON de la herramienta de laboratorio
   if [[ $MODE == docker ]]; then

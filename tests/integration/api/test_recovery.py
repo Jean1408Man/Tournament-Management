@@ -25,7 +25,7 @@ def test_shutdown_rebuilds_queue_and_replaces_interrupted_attempt(api_factory, f
     started = threading.Event()
     attempts = []
 
-    def slow(attempt, store, cancel=None):
+    def slow(attempt, store, cancel=None, delay_ms=0):
         attempts.append(attempt)
         started.set()
         assert cancel.wait(timeout=10)
@@ -44,7 +44,7 @@ def test_shutdown_rebuilds_queue_and_replaces_interrupted_attempt(api_factory, f
     queued = api.create(key="queued", tournament_id="queued")[2]
     assert api.request("GET", queued["status_url"])[2]["statistics"]["attempts_total"] == 0
     api.close()
-    resumed = api_factory(runner=lambda attempt, store, cancel=None: outcome(attempt))
+    resumed = api_factory(runner=lambda attempt, store, cancel=None, delay_ms=0: outcome(attempt))
     final = resumed.terminal(first["tournament_id"])
     assert final["state"] == "completed"
     assert final["statistics"]["attempts_total"] == (3 if format_name == "elimination" else 4)
@@ -58,7 +58,7 @@ def test_shutdown_rebuilds_queue_and_replaces_interrupted_attempt(api_factory, f
 def test_restart_without_retry_budget_blocks_before_submitting_replacement(api_factory):
     started = threading.Event()
 
-    def slow(attempt, store, cancel=None):
+    def slow(attempt, store, cancel=None, delay_ms=0):
         started.set()
         assert cancel.wait(timeout=10)
         coordinator._thread.join(timeout=5)
@@ -74,7 +74,7 @@ def test_restart_without_retry_budget_blocks_before_submitting_replacement(api_f
     api.close()
     submitted = []
 
-    def replacement(attempt, store, cancel=None):
+    def replacement(attempt, store, cancel=None, delay_ms=0):
         submitted.append(attempt)
         return outcome(attempt)
 
@@ -93,7 +93,7 @@ def test_physical_cancellation_failure_does_not_revoke_confirmed_cancellation(
     release = threading.Event()
     attempts = []
 
-    def uncooperative(attempt, store, cancel=None):
+    def uncooperative(attempt, store, cancel=None, delay_ms=0):
         attempts.append(attempt)
         started.set()
         release.wait(timeout=10)
@@ -118,5 +118,5 @@ def test_physical_cancellation_failure_does_not_revoke_confirmed_cancellation(
     finally:
         release.set()
     api.close()
-    resumed = api_factory(runner=lambda attempt, store, cancel=None: outcome(attempt))
+    resumed = api_factory(runner=lambda attempt, store, cancel=None, delay_ms=0: outcome(attempt))
     assert resumed.terminal(created["tournament_id"])["state"] == "cancelled"
