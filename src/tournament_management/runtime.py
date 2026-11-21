@@ -57,7 +57,9 @@ def application_services(settings: Settings) -> Iterator[ApiServices | None]:
 def _backend(settings: Settings, store: FileArtifactStore, connection):
     if connection is None:
         return LocalExecution(
-            lambda attempt, cancel: run_registered_match(attempt, store, cancel=cancel),
+            lambda attempt, cancel: run_registered_match(
+                attempt, store, cancel=cancel, delay_ms=settings.worker_delay_ms
+            ),
         )
     from tournament_management.execution.backends.ray import RayExecution
 
@@ -123,7 +125,7 @@ def readiness(settings: Settings, services: ApiServices | None) -> dict:
         except OSError:
             checks["database"] = "unavailable"
     # Con Ray, listo significa conexión abierta y coordinador sano; la falta de
-    # workers no lo cambia y se observa en /api/v1/workers (D1.7).
+    # workers no lo cambia y se observa en /api/v1/workers.
     if services and services.coordinator and services.coordinator.healthy:
         checks["execution"] = "ready"
     return checks

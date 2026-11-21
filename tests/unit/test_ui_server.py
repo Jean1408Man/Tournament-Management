@@ -1,4 +1,4 @@
-"""Panel de ui/ (bloque G): lista cerrada de órdenes y controles de acceso."""
+"""Panel de ui: lista cerrada de órdenes y controles de acceso."""
 
 import importlib.util
 import json
@@ -93,6 +93,16 @@ def test_pause_40_and_docker_paths_without_conversion():
     assert env["TM_PAUSE_SECONDS"] == "40"
     _, env = ui.build_command("docker", "cluster-start", None)
     assert env["TM_BACKEND"] == "ray" and env["MSYS_NO_PATHCONV"] == "1"
+
+
+def test_cluster_start_delay_is_validated_and_passed_in_ms():
+    for mode in ("docker", "local"):
+        assert ui.build_command(mode, "cluster-start", None)[1]["TM_WORKER_DELAY_MS"] == "0"
+        assert ui.build_command(mode, "cluster-start", 20)[1]["TM_WORKER_DELAY_MS"] == "20000"
+        assert ui.build_command(mode, "cluster-start", 60)[1]["TM_WORKER_DELAY_MS"] == "60000"
+    for bad in (-1, 61, 2.5, "20", True, "20; rm -rf /"):
+        with pytest.raises(ValueError):
+            ui.build_command("docker", "cluster-start", bad)
 
 
 def test_runner_allows_only_one_execution_at_a_time():

@@ -7,7 +7,7 @@ from tournament_management.shared.messages import AttemptOutcome, MatchSpec
 from tournament_management.shared.states import MatchState, TournamentState, transition
 from tournament_management.tournaments.model import TournamentSpec, progress, rebuild
 
-# Clave arbitraria y fija del bloqueo consultivo de admisión (5.1).
+# Clave arbitraria y fija del bloqueo consultivo de admisión.
 ADMISSION_LOCK = 510_001
 
 

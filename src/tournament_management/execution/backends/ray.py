@@ -1,4 +1,4 @@
-"""Backend Ray del puerto ExecutionBackend (etapa 4.1).
+"""Backend Ray del puerto ExecutionBackend.
 
 El adaptador elige el worker de cada intento (afinidad estricta) y Ray solo
 transporta la tarea y avisa de caídas. Ray no reintenta: un intento perdido
@@ -56,7 +56,9 @@ def play_attempt(attempt_json: str, worker_id: str) -> str:
             kind=OutcomeKind.INFRASTRUCTURE_FAILURE, winner_id="",
             reason="artifact_download_not_configured",
         ).to_json()
-    return run_registered_match(attempt, store, worker_id=worker_id).to_json()
+    return run_registered_match(
+        attempt, store, worker_id=worker_id, delay_ms=settings.worker_delay_ms
+    ).to_json()
 
 
 @dataclass

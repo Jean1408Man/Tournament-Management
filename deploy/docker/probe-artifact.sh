@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Comprueba que cada worker obtiene el objeto descargándolo del coordinador (4.2),
+# Comprueba que cada worker obtiene el objeto descargándolo del coordinador,
 # sin volumen compartido ni acceso a PostgreSQL.
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"

@@ -8,7 +8,7 @@ require_docker
 command -v timeout >/dev/null || die "Se requiere timeout (GNU coreutils)."
 [[ "$TM_ARTIFACT_MAX_BYTES" =~ ^[1-9][0-9]*$ ]] || die "TM_ARTIFACT_MAX_BYTES debe ser positivo."
 [[ "$TM_START_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "TM_START_TIMEOUT debe ser positivo."
-# Token de la descarga interna de bots (4.2): nuevo en cada arranque salvo que
+# Token de la descarga interna de bots: nuevo en cada arranque salvo que
 # ya esté exportado. No se guarda en .env; coordinador y workers lo comparten.
 if [[ -z "${TM_INTERNAL_TOKEN:-}" ]]; then
   TM_INTERNAL_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
@@ -40,7 +40,7 @@ else
   docker volume create --label "$TM_LABEL_KEY=$TM_LABEL_VALUE" tm-postgres-data
 fi
 
-# Volumen de ejecutables del coordinador. Desde 4.2 los workers no lo montan:
+# Volumen de ejecutables del coordinador. Los workers no lo montan:
 # descargan cada bot por hash desde el coordinador y verifican sus bytes.
 if docker volume inspect tm-artifacts >/dev/null 2>&1; then
   owned volume tm-artifacts
@@ -75,7 +75,7 @@ TM_TRY_TIMEOUT=35 wait_for "$TM_WORKERS workers registrados" docker exec tm-head
   tournament_management.cluster.ray_topology --address ray://tm-head:10001 \
   --expected-workers "$TM_WORKERS"
 
-# Límites de carga de 5.1: solo se pasan si se definen (si no, los de la aplicación).
+# Límites de carga: solo se pasan si se definen (si no, los de la aplicación).
 limits=()
 for key in TM_MAX_RUNNING_ATTEMPTS TM_MAX_ACTIVE_TOURNAMENTS; do
   if [[ -n "${!key:-}" ]]; then limits+=(--env "$key=${!key}"); fi
@@ -87,7 +87,7 @@ docker run "${base[@]}" "${limits[@]}" --name tm-coordinator --hostname tm-coord
   --env TM_RAY_ADDRESS=ray://tm-head:10001 \
   --env "TM_DATABASE_URL=postgresql://tm:${TM_POSTGRES_PASSWORD}@tm-postgres:5432/tournament_management" \
   --env "TM_BACKEND=${TM_BACKEND:-local}" --env TM_HTTP_HOST=0.0.0.0 \
-  --env "TM_INTERNAL_TOKEN=$TM_INTERNAL_TOKEN" \
+  --env "TM_INTERNAL_TOKEN=$TM_INTERNAL_TOKEN" --env "TM_WORKER_DELAY_MS=$TM_WORKER_DELAY_MS" \
   "$image_id" coordinator
 wait_for "API del coordinador" docker exec tm-coordinator python -c \
   'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).read()'

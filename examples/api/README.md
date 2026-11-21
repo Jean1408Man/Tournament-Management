@@ -1,4 +1,4 @@
-# Recorrido HTTP — etapa 3.3
+# Recorrido HTTP
 
 Ejecutar desde la raíz del repositorio, con API local y PostgreSQL migrado.
 Para Docker, reconstruir la imagen y recrear contenedores siguiendo

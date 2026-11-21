@@ -1,9 +1,9 @@
-"""Panel de observación del clúster (bloque G, E4.15 c).
+"""Panel de observación del clúster.
 
 Sirve ui/index.html en 127.0.0.1 y le da, todo de solo lectura: workers (API
 pública), torneos y partidas en ejecución (consulta a PostgreSQL), eventos de un
 torneo (SSE público reenviado) y logs (docker logs o los archivos del modo local).
-Además lanza una lista cerrada de órdenes (E4.16 b), una a la vez, con su salida
+Además lanza una lista cerrada de órdenes, una a la vez, con su salida
 en vivo. Solo biblioteca estándar: vale con el Python de Windows y el de WSL.
 
 Uso: python ui/server.py   (imprime la URL con el token de este arranque)
@@ -85,7 +85,9 @@ LOAD_MIXES = {
                  "--bot", "optimal"],
 }
 DESCRIPTIONS = {
-    "cluster-start": "Levanta PostgreSQL, el head de Ray, 4 workers y el coordinador (1–2 min).",
+    "cluster-start": "Levanta PostgreSQL, el head de Ray, 4 workers y el coordinador (1–2 min). "
+                     "La espera (s) retrasa cada partida en el worker para poder matarlo o "
+                     "pausarlo; 0 = sin espera.",
     "cluster-stop": "Detiene todo; los torneos guardados se conservan.",
     "cluster-status": "Comprueba cada pieza e imprime la configuración del coordinador.",
     "worker-add": "Une un worker nuevo al clúster: más partidas a la vez.",
@@ -107,6 +109,7 @@ DESCRIPTIONS = {
 }
 FORMATS = ("round_robin", "elimination")
 MAX_PILES, MAX_PILE = 5, 50
+MAX_DELAY_S = 60  # tope de TM_WORKER_DELAY_MS (config.MAX_WORKER_DELAY_MS) en segundos
 
 
 def scenarios(mode: str) -> list[str]:
@@ -153,7 +156,7 @@ def next_worker(workers: list[dict]) -> str | None:
 def catalog(mode: str) -> list[dict]:
     """Órdenes que ofrece la página: id, grupo, etiqueta, descripción y argumento."""
     items = [
-        ("cluster-start", "Clúster", "Arrancar", None),
+        ("cluster-start", "Clúster", "Arrancar", "delay"),
         ("cluster-stop", "Clúster", "Parar", None),
         ("cluster-status", "Clúster", "Estado", None),
         ("worker-add", "Workers", "Añadir worker", "worker-next"),
@@ -219,6 +222,12 @@ def build_command(mode: str, command: str, arg: object,
                  "worker-recover": state.get(name) is False}[command]
         if not valid:
             raise ValueError(f"{arg!r} no vale para esta orden con los workers actuales")
+    if command == "cluster-start":
+        # Segundos de espera del worker antes de cada partida; sin valor, ninguna.
+        delay = 0 if arg is None else arg
+        if type(delay) is not int or not 0 <= delay <= MAX_DELAY_S:
+            raise ValueError(f"la espera debe ser un entero de 0 a {MAX_DELAY_S} segundos")
+        env["TM_WORKER_DELAY_MS"] = str(delay * 1000)
     if command == "verify":
         if arg not in results_folders():
             raise ValueError("carpeta de resultados desconocida")

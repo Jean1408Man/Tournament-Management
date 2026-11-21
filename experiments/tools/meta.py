@@ -1,4 +1,4 @@
-"""meta.json de cada ejecución (5.3): revisión, configuración, hardware y comando.
+"""meta.json de cada ejecución: revisión, configuración, hardware y comando.
 
 Uso (lo llama scenario_start de lib.sh): python meta.py CARPETA MODO "COMANDO"
 Los secretos (token, contraseñas, URL de la base) se guardan enmascarados.

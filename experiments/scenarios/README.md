@@ -83,6 +83,10 @@ En Git Bash no se exporta `MSYS_NO_PATHCONV` para los escenarios: rompe
 - `TM_SCENARIO_PILES` (`[10,10,10]`): montones de las partidas lentas.
 - `TM_PAUSE_SECONDS` (plazo del intento + 10 s), `TM_PARTITION_SECONDS` (60),
   `TM_DOWN_SECONDS` (10), `TM_OBSERVE_SECONDS` (90): duraciones de cada fallo.
+  El plazo del intento que usa `TM_PAUSE_SECONDS` ya incluye la espera del worker.
+- La espera de laboratorio del clúster (`TM_WORKER_DELAY_MS`, 0) se fija al
+  arrancarlo y queda en `meta.json`. Los escenarios y la campaña se validaron con
+  0; con otra espera tardan más y `worker-partition` puede terminar por su otra rama.
 
 ## Utilidades (`experiments/tools/`)
 
@@ -98,7 +102,7 @@ partición solo existe en Docker (sin root no se aísla la red de un proceso).
 
 ## Relación con la orientación del curso
 
-La [orientación P03](../../docs/P03_Plataforma_distribuida_de_ejecucion_de_torneos.md)
+La orientacion
 exige continuidad ante pérdida de worker, distinción entre fallo del bot y de
 infraestructura, prevención de duplicados, estado durable y torneos concurrentes.
 Los escenarios concretos son la forma elegida por el equipo de comprobarlo.

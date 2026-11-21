@@ -10,7 +10,7 @@ if [[ -f "$TM_ENV_FILE" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
     [[ -z "$line" || "$line" == \#* ]] && continue
-    if [[ "$line" =~ ^(TM_IMAGE|TM_POSTGRES_IMAGE|TM_POSTGRES_PASSWORD|TM_API_PORT|TM_START_TIMEOUT|TM_ARTIFACT_MAX_BYTES|TM_BACKEND|TM_WORKERS|TM_WORKER_MEMORY|TM_MAX_RUNNING_ATTEMPTS|TM_MAX_ACTIVE_TOURNAMENTS)=(.*)$ ]]; then
+    if [[ "$line" =~ ^(TM_IMAGE|TM_POSTGRES_IMAGE|TM_POSTGRES_PASSWORD|TM_API_PORT|TM_START_TIMEOUT|TM_ARTIFACT_MAX_BYTES|TM_BACKEND|TM_WORKERS|TM_WORKER_MEMORY|TM_MAX_RUNNING_ATTEMPTS|TM_MAX_ACTIVE_TOURNAMENTS|TM_WORKER_DELAY_MS)=(.*)$ ]]; then
       key="${BASH_REMATCH[1]}"
       value="${BASH_REMATCH[2]}"
       if [[ ! -v "$key" ]]; then
@@ -37,6 +37,12 @@ TM_POSTGRES_IMAGE="${TM_POSTGRES_IMAGE:-postgres:16.6-bookworm}"
 TM_POSTGRES_PASSWORD="${TM_POSTGRES_PASSWORD:-}"
 TM_START_TIMEOUT="${TM_START_TIMEOUT:-180}"
 TM_ARTIFACT_MAX_BYTES="${TM_ARTIFACT_MAX_BYTES:-1048576}"
+# Espera de laboratorio de cada worker antes de cada partida (0 = ninguna, máx. 60 s).
+TM_WORKER_DELAY_MS="${TM_WORKER_DELAY_MS:-0}"
+if [[ ! "$TM_WORKER_DELAY_MS" =~ ^[0-9]+$ ]] || ((10#$TM_WORKER_DELAY_MS > 60000)); then
+  printf 'TM_WORKER_DELAY_MS debe ser un entero entre 0 y 60000.\n' >&2
+  exit 1
+fi
 
 TM_RUN_BASE=(--detach --pull never --init --network tm-net --label "$TM_LABEL_KEY=$TM_LABEL_VALUE"
              --stop-timeout 20 --log-opt max-size=10m --log-opt max-file=3
@@ -52,10 +58,10 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 # Worker Ray sin volumen ni credenciales PostgreSQL: descarga los bots del
 # coordinador con el token (4.2). Lo usan start-cluster.sh y add-worker.sh.
 start_worker() {
-  local name="$1" image="$2" token="$3"
+  local name="$1" image="$2" token="$3" delay="${4:-$TM_WORKER_DELAY_MS}"
   docker run "${TM_RUN_BASE[@]}" "${TM_WORKER_LIMITS[@]}" --name "$name" --hostname "$name" \
     --env TM_ARTIFACT_URL=http://tm-coordinator:8000 \
-    --env "TM_INTERNAL_TOKEN=$token" \
+    --env "TM_INTERNAL_TOKEN=$token" --env "TM_WORKER_DELAY_MS=$delay" \
     "$image" ray-worker
 }
 

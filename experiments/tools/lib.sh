@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Utilidades comunes de los escenarios de fallo (etapa 4.4).
+# Utilidades comunes de los escenarios de fallo.
 # Cada escenario guarda su evidencia en experiments/results/<escenario>-<fecha>/
 # y termina con código distinto de 0 si alguna comprobación falla.
 # Modo Docker (deploy/docker/start-cluster.sh con TM_BACKEND=ray) o local
@@ -27,7 +27,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 RESULTS=""
 FAILURES=0
 COMMAND="$0${*:+ $*}"  # lib.sh se carga con source: $@ son los argumentos del escenario
-FOLLOWERS=()           # clientes que escuchan cada torneo creado (I6, E3.7)
+FOLLOWERS=()           # clientes que escuchan cada torneo creado
 
 scenario_start() {  # nombre
   RESULTS="experiments/results/$1-$STAMP"
@@ -148,7 +148,7 @@ dump() {  # torneo → guarda torneo, todas las partidas y el historial completo
   "$PY" experiments/tools/load.py dump "$API" "$1" "$RESULTS"
 }
 
-verify_evidence() {  # tm verify (5.2) sobre todo lo guardado; informe en verify.json
+verify_evidence() {  # tm verify sobre todo lo guardado; informe en verify.json
   local status
   set +e
   PYTHONPATH=src PYTHONIOENCODING=utf-8 "$PY" -m tournament_management verify \
@@ -218,7 +218,7 @@ worker_restore() {  # vuelve a arrancar el worker y espera a verlo available con
     $LOCAL_CLUSTER restore "$name" >/dev/null
   fi
   # available no basta: tras un reinicio Ray lista ~15 s el nodo viejo y el nuevo,
-  # y un intento enviado al viejo falla con TaskUnschedulableError (E1.14).
+  # y un intento enviado al viejo falla con TaskUnschedulableError.
   while ((SECONDS < deadline)); do
     curl -s "$API/api/v1/workers" | grep -q "\"worker_id\":\"$name\",\"status\":\"available\"" &&
       ray_settled && return 0
@@ -274,9 +274,10 @@ db_scalar() {  # consulta SQL de solo lectura sobre la base del clúster
     "$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)/psql" "$LOCAL_DB" -Atc "$1"
   fi
 }
-attempt_timeout_seconds() {  # plazo del intento con el que corre el coordinador
-  local code='import os; from tournament_management.config import Settings; print(Settings.load({}, os.environ).attempt_timeout_ms // 1000)'
-  if [[ $MODE == docker ]]; then docker exec tm-coordinator python -c "$code"; else "$LOCAL_PY" -c "$code"; fi
+attempt_timeout_seconds() {  # plazo real del intento: el configurado + la espera del worker
+  local code='import os; from tournament_management.config import Settings; s = Settings.load({}, os.environ); print((s.attempt_timeout_ms + s.worker_delay_ms) // 1000)'
+  if [[ $MODE == docker ]]; then docker exec tm-coordinator python -c "$code"
+  else TM_WORKER_DELAY_MS="$(cat "$LOCAL_HOME/run/worker_delay_ms" 2>/dev/null || echo 0)" "$LOCAL_PY" -c "$code"; fi
 }
 inject_late() {  # attempt_id → JSON de la herramienta de laboratorio
   if [[ $MODE == docker ]]; then

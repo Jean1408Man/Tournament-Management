@@ -22,6 +22,10 @@ Se ejecutan con bash desde cualquier carpeta.
 - `stop-cluster.sh`: retira los contenedores; conserva volúmenes y red.
 - `common.sh`: funciones compartidas (no se ejecuta solo). Genera
   `tm-worker-1..N` a partir de `TM_WORKERS` (4) y aplica `TM_WORKER_MEMORY`.
+  También pasa `TM_WORKER_DELAY_MS` (0) a workers y coordinador: espera de
+  laboratorio antes de cada partida para poder matar o pausar un worker a mano;
+  el coordinador alarga el plazo del intento lo mismo. `add-worker.sh` copia la
+  del coordinador en marcha.
 
 El volumen `tm-artifacts` conserva los bots al recrear el clúster; solo el
 coordinador lo monta con escritura y los workers no reciben credenciales de

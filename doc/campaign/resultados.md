@@ -210,10 +210,3 @@ observación de cada escenario: no miden rendimiento.
   - En Docker queda una variación sin explicar en la carga Nim: cuatro
     repeticiones en 85–88 s y una en 45 s. En local la misma carga tarda 21,5 s.
   - El límite de admisión funciona: el exceso recibe 429 y entra al reintentar.
-
-## Limitaciones comunes
-
-- Un solo equipo: no hay pérdida de una máquina física ni red real entre nodos.
-- El reloj de la VM de Docker salta ~24 s a veces; las métricas usan la hora de
-  recepción del cliente y el orden siempre la `sequence`.
-- Las duraciones de los escenarios incluyen esperas fijas; no miden rendimiento.

@@ -76,11 +76,6 @@ la plataforma, que es lo que se conserva en la Fase 2.
 
 - Los reintentos, plazos y descartes son de la plataforma (D2), visibles en el
   historial.
-- Sustituir Ray en la Fase 2 exige implementar transporte, registro, latidos,
-  asignación y parada detrás de los puertos existentes, y repetir las pruebas
-  de contrato y de fallos para comprobar que conservan la semántica.
-- Hay que cubrir lo que Ray no detecta: un worker congelado o aislado lo
-  resuelve el plazo propio del intento.
 - El head de Ray es un punto único de fallo con recuperación manual.
 
 ## D4 — Membresía propia de los workers
@@ -110,7 +105,7 @@ puede alimentar la misma membresía con latidos propios.
 
 ## D5 — Coordinador de un hilo, con turnos y admisión con 429
 
-**Problema.** Hasta la etapa 5 el sistema ejecutaba un intento a la vez y
+**Problema.** El sistema ejecutaba un intento a la vez y
 agotaba un torneo antes de empezar el siguiente. Hacía falta jugar varias
 partidas y varios torneos a la vez sin carreras entre comprobar un hueco y
 usarlo, y sin aceptar trabajo sin límite.

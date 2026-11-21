@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Escenario coordinator-restart (guía 5.3: "reinicio del coordinador"; E3.4 a).
 # Round-robin de cuatro bots lentos (6 partidas, varias a la vez); con intentos
 # en curso se mata el coordinador con SIGKILL y se vuelve a arrancar. Hipótesis:
 # lo aceptado antes sigue aceptado; lo que estaba en curso queda attempt.lost

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clúster sin Docker (etapa 4.4): PostgreSQL propio, head y workers de Ray y el
+# Clúster sin Docker: PostgreSQL propio, head y workers de Ray y el
 # coordinador como procesos de Linux/WSL. Mismos parámetros que start-cluster.sh.
 # Los datos persisten en TM_LOCAL_HOME (~/.local/share/tournament-management)
 # entre stop y start; solo `reset` los borra. Guía: deploy/ARRANQUE.md.
@@ -19,7 +19,7 @@ API_PORT="${TM_API_PORT:-8000}" CLIENT_PORT="${TM_LOCAL_RAY_CLIENT_PORT:-10001}"
 PG_PORT="${TM_LOCAL_PG_PORT:-5433}" WORKERS="${TM_LOCAL_WORKERS:-${TM_WORKERS:-4}}"
 DB_URL="postgresql:///tournament_management?host=$RUN&port=$PG_PORT&user=tm"
 API="http://127.0.0.1:$API_PORT"
-# Misma mitigación gRPC que el despliegue Docker (decisión 1.15).
+# Misma mitigación gRPC que el despliegue Docker.
 export GRPC_POLL_STRATEGY=poll GRPC_ENABLE_FORK_SUPPORT=true RAY_USAGE_STATS_ENABLED=0
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
@@ -109,15 +109,18 @@ head_start() {
     die "El head de Ray terminó al arrancar (ver $LOGS/head.log)"
 }
 
+# Espera de laboratorio fijada al arrancar; add-worker y restore reutilizan la misma.
+worker_delay() { cat "$RUN/worker_delay_ms" 2>/dev/null || echo 0; }
+
 worker_start() {  # nombre
   [[ "$1" =~ ^tm-worker-[0-9]+$ ]] || die "Nombre de worker inválido: $1"
   alive "$1" && { say "$1 ya está en marcha"; return 0; }
   local attempt
   for attempt in 1 2; do
     : > "$LOGS/$1.log"
-    # Sin volumen compartido: descarga los bots del coordinador con el token (4.2).
+    # Sin volumen compartido: descarga los bots del coordinador con el token.
     TM_ARTIFACT_URL="$API" TM_INTERNAL_TOKEN="$(cat "$RUN/token")" \
-      TM_WORKER_LOG_PATH="$LOGS/$1.log" \
+      TM_WORKER_DELAY_MS="$(worker_delay)" TM_WORKER_LOG_PATH="$LOGS/$1.log" \
       start_bg "$1" "$VENV/bin/python" deploy/local/local_cluster.py worker \
       --name "$1" --address-file "$RUN/head.address"
     wait_for "$1" 120 --watch "$1" grep -q "listo worker $1" "$LOGS/$1.log" && return 0
@@ -130,7 +133,7 @@ worker_start() {  # nombre
 coordinator_start() {
   TM_DATABASE_URL="$DB_URL" TM_DATA_DIR="$LOCAL_HOME/data" TM_BACKEND=ray \
     TM_RAY_ADDRESS="ray://127.0.0.1:$CLIENT_PORT" TM_INTERNAL_TOKEN="$(cat "$RUN/token")" \
-    TM_HTTP_HOST=127.0.0.1 TM_HTTP_PORT="$API_PORT" \
+    TM_HTTP_HOST=127.0.0.1 TM_HTTP_PORT="$API_PORT" TM_WORKER_DELAY_MS="$(worker_delay)" \
     start_bg coordinator "$VENV/bin/tm" serve
   wait_for "API del coordinador en $API" 180 --watch coordinator curl -sf "$API/ready" ||
     die "El coordinador terminó al arrancar (ver $LOGS/coordinator.log)"
@@ -171,6 +174,10 @@ case "${1:-}" in
     postgres_start
     od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$RUN/token"
     chmod 600 "$RUN/token"
+    delay="${TM_WORKER_DELAY_MS:-0}"
+    [[ "$delay" =~ ^[0-9]+$ ]] && ((10#$delay <= 60000)) ||
+      die "TM_WORKER_DELAY_MS debe ser un entero entre 0 y 60000."
+    printf '%s\n' "$((10#$delay))" > "$RUN/worker_delay_ms"
     clean_ray
     head_start
     for i in $(seq 1 "$WORKERS"); do worker_start "tm-worker-$i"; done
@@ -209,7 +216,7 @@ case "${1:-}" in
     ;;
   recover)
     # Equivale al procedimiento de OPERATIONS.md tras perder el head: head nuevo,
-    # workers que se conectan a él y coordinador reiniciado (recuperación de 3.4).
+    # workers que se conectan a él y coordinador reiniciado.
     names=$(workers_running); [[ -n "$names" ]] || names=$(seq -f 'tm-worker-%g' 1 "$WORKERS")
     stop_one coordinator
     for name in $names; do stop_one "$name"; done

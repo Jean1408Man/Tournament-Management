@@ -1,4 +1,4 @@
-"""meta.json de los escenarios (5.3): los secretos no llegan a la evidencia."""
+"""meta.json de los escenarios: los secretos no llegan a la evidencia."""
 
 import importlib.util
 from pathlib import Path

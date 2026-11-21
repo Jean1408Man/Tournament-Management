@@ -1,4 +1,4 @@
-"""Estados propios de los workers con un reloj falso (4.3, D3.1)."""
+"""Estados propios de los workers con un reloj falso."""
 
 import pytest
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Campaña mínima de 5.3 (E3.5 a): cada escenario con repeticiones y tm verify en
+# Campaña mínima: cada escenario con repeticiones y tm verify en
 # cada ejecución. Escenarios clave (worker muerto, partición, carga): 5; resto: 3.
 # Uso: bash experiments/campaign.sh [docker|local]
 #   TM_CAMPAIGN_KEY_REPS / TM_CAMPAIGN_REPS cambian las repeticiones (local: 1 y 1).

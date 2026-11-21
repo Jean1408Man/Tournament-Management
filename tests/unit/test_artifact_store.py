@@ -3,6 +3,7 @@
 import hashlib
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock
@@ -180,6 +181,43 @@ def test_registered_execution_forwards_cancellation(tmp_path):
     cancel.set()
     result = run_registered_match(attempt((digest, digest)), store, cancel=cancel)
     assert result.kind == OutcomeKind.INFRASTRUCTURE_FAILURE
+
+
+def test_lab_delay_waits_before_starting_the_bots(tmp_path, monkeypatch):
+    from tournament_management.execution.backends import registered
+
+    store = FileArtifactStore(tmp_path)
+    digest = store.put(b"# bot\n")
+    sentinel = Mock(kind=OutcomeKind.COMPLETED, reason="normal")
+    calls = []
+
+    def run(spec, commands, **kwargs):
+        calls.append(time.monotonic())
+        return sentinel
+
+    monkeypatch.setattr(registered, "run_match", run)
+    started = time.monotonic()
+    assert run_registered_match(attempt((digest, digest)), store, delay_ms=300) is sentinel
+    # Los relojes del árbitro arrancan después de la espera: no cuenta contra ningún bot.
+    assert calls[0] - started >= 0.3
+
+
+def test_cancel_during_lab_delay_stops_without_starting_bots(tmp_path, monkeypatch):
+    from tournament_management.execution.backends import registered
+
+    store = FileArtifactStore(tmp_path)
+    digest = store.put(b"# bot\n")
+    run = Mock()
+    monkeypatch.setattr(registered, "run_match", run)
+    cancel = threading.Event()
+    threading.Timer(0.1, cancel.set).start()
+    started = time.monotonic()
+    result = run_registered_match(attempt((digest, digest)), store, cancel=cancel,
+                                  delay_ms=10_000)
+    assert time.monotonic() - started < 5
+    assert result.kind == OutcomeKind.INFRASTRUCTURE_FAILURE
+    assert result.reason == "cancelled" and not result.winner_id
+    run.assert_not_called()
 
 
 def test_partial_write_error_does_not_leave_object(tmp_path, monkeypatch):

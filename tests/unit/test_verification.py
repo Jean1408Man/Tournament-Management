@@ -1,4 +1,4 @@
-"""Historias de prueba de 5.2: una válida por formato y una rota por invariante."""
+"""Historias de prueba: una válida por formato y una rota por invariante."""
 
 import json
 import sys

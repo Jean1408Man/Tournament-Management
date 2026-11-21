@@ -22,7 +22,7 @@ def result(attempt, kind=OutcomeKind.COMPLETED):
 def test_infrastructure_retry_is_visible_in_match_history(api_factory):
     attempts = []
 
-    def execute(attempt, store, cancel=None):
+    def execute(attempt, store, cancel=None, delay_ms=0):
         attempts.append(attempt)
         return result(
             attempt,
@@ -46,7 +46,7 @@ def test_infrastructure_retry_is_visible_in_match_history(api_factory):
 @pytest.mark.parametrize("kind", [OutcomeKind.INFRASTRUCTURE_FAILURE, OutcomeKind.NO_WINNER])
 def test_unresolved_attempt_blocks_without_inventing_winner(api_factory, kind):
     api = api_factory(
-        runner=lambda attempt, store, cancel=None: result(attempt, kind), max_retries=0
+        runner=lambda attempt, store, cancel=None, delay_ms=0: result(attempt, kind), max_retries=0
     )
     api.register("a")
     api.register("b")
@@ -64,7 +64,7 @@ def test_cancellation_rejects_late_result_and_requests_process_stop(api_factory)
     started = threading.Event()
     stopped = threading.Event()
 
-    def execute(attempt, store, cancel=None):
+    def execute(attempt, store, cancel=None, delay_ms=0):
         started.set()
         if cancel.wait(timeout=5):
             stopped.set()
@@ -91,7 +91,7 @@ def test_attempt_timeout_is_durable_before_replacement(api_factory):
     attempts = []
     first_stopped = threading.Event()
 
-    def execute(attempt, store, cancel=None):
+    def execute(attempt, store, cancel=None, delay_ms=0):
         attempts.append(attempt)
         if attempt.generation == 1:
             if cancel.wait(timeout=5):
@@ -116,7 +116,7 @@ def test_attempt_timeout_is_durable_before_replacement(api_factory):
 
 
 def test_database_error_before_accept_does_not_acknowledge_notification(api_factory, monkeypatch):
-    api = api_factory(runner=lambda attempt, store, cancel=None: result(attempt))
+    api = api_factory(runner=lambda attempt, store, cancel=None, delay_ms=0: result(attempt))
     runtime = api.app.state.services
     acknowledged = []
     original_acknowledge = runtime.backend.acknowledge
@@ -154,7 +154,7 @@ def test_late_result_of_replaced_attempt_is_discarded_with_evidence(api_factory)
 
     attempts = []
 
-    def execute(attempt, store, cancel=None):
+    def execute(attempt, store, cancel=None, delay_ms=0):
         attempts.append(attempt)
         if attempt.generation == 1:
             cancel.wait(timeout=5)  # sigue "jugando" hasta que el plazo lo invalida

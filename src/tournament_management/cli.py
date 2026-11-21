@@ -1,4 +1,4 @@
-"""Comandos del proyecto; diagnóstico y servidor mínimo en el paso 1.4."""
+"""Comandos del proyecto; diagnóstico y servidor mínimo."""
 
 import argparse
 import os

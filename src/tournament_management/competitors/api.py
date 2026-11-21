@@ -83,7 +83,7 @@ def get_competitor(competitor_id: Identifier, runtime: Services) -> dict:
     return asdict(runtime.competitors.get(competitor_id))
 
 
-# Descarga interna para los workers (4.2): fuera de /api/v1 y del OpenAPI congelado.
+# Descarga interna para los workers: fuera de /api/v1 y del OpenAPI congelado.
 internal_router = APIRouter(prefix="/internal/artifacts", include_in_schema=False)
 
 

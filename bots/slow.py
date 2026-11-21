@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bot lento pero legal (4.4): piensa 0,5 s y quita 1 ficha del primer montón.
+"""Bot lento pero legal: piensa 0,5 s y quita 1 ficha del primer montón.
 
 Sirve para partidas largas y predecibles en los experimentos de fallo: entre dos
 bots lentos hay tantas jugadas como fichas, así que la partida dura

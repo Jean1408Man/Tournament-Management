@@ -31,7 +31,7 @@ def workers(runtime: Services) -> list[dict]:
     try:
         return [asdict(worker) for worker in runtime.backend.workers()]
     except ExecutionError as exc:
-        # Sin el middleware (p. ej. head de Ray caído, 4.4) no hay membresía que mostrar.
+        # Sin el middleware (p. ej. head de Ray caído) no hay membresía que mostrar.
         raise ApiError(
             503, "execution_unavailable", "La membresía de workers no está disponible"
         ) from exc

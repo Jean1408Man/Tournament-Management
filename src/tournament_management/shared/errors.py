@@ -6,4 +6,4 @@ class ConflictError(ValueError):
 
 
 class OverloadedError(Exception):
-    """Límite de admisión alcanzado (5.1, E1.6): no se guardó nada; reintentar luego."""
+    """Límite de admisión alcanzado: no se guardó nada; reintentar luego."""

@@ -1,4 +1,4 @@
-"""Backend Ray con un Ray falso: casos raros y deterministas (D1.5).
+"""Backend Ray con un Ray falso: casos raros y deterministas.
 
 El comportamiento con Ray real se prueba en tests/integration/test_ray_execution.py.
 """
@@ -327,6 +327,28 @@ def test_worker_without_download_settings_reports_infrastructure(monkeypatch, en
     result.validate_for(spec)
     assert result.kind is OutcomeKind.INFRASTRUCTURE_FAILURE
     assert result.reason == "artifact_download_not_configured"
+
+
+def test_worker_reads_its_lab_delay_from_the_environment(monkeypatch):
+    from tournament_management.execution.backends import registered
+    from tournament_management.execution.backends.ray import play_attempt
+
+    monkeypatch.setenv("TM_ARTIFACT_URL", "http://tm-coordinator:8000")
+    monkeypatch.setenv("TM_INTERNAL_TOKEN", "t" * 32)
+    monkeypatch.setenv("TM_WORKER_DELAY_MS", "20000")
+    seen = {}
+
+    def run(spec, store, **kwargs):
+        seen.update(kwargs)
+        return AttemptOutcome(
+            match_id=spec.match.match_id, attempt_id=spec.attempt_id,
+            generation=spec.generation, worker_id=kwargs["worker_id"],
+            kind=OutcomeKind.COMPLETED, winner_id="x", reason="last_move",
+        )
+
+    monkeypatch.setattr(registered, "run_registered_match", run)
+    play_attempt(attempt().to_json(), "tm-worker-1")
+    assert seen == {"worker_id": "tm-worker-1", "delay_ms": 20_000}
 
 
 def test_membership_error_is_translated(ray):

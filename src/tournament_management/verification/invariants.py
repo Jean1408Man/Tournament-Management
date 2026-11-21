@@ -1,4 +1,4 @@
-"""Invariantes I1–I6 sobre la evidencia de un torneo (5.2; I6 en 5.1).
+"""Invariantes I1–I6 sobre la evidencia de un torneo.
 
 Detecta violaciones en las ejecuciones observadas; no demuestra que no existan.
 El orden es la sequence de cada torneo: se asigna con el torneo bloqueado hasta
@@ -10,8 +10,7 @@ tournament.blocked y tournament.cancelled.
 
 I2 repite el torneo con los formatos del servidor; un error compartido en ellos
 pasaría inadvertido, por eso se añaden propiedades independientes (E2.8 c).
-I6 (lo que vio el cliente) solo se comprueba si hay client.jsonl (generador de
-carga de 5.1, E2.7 c); sin él figura en not_checked.
+I6 (lo que vio el cliente) solo se comprueba si hay client.jsonl; sin él figura en not_checked.
 """
 
 from collections import Counter

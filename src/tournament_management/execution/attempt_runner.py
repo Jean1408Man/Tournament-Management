@@ -1,4 +1,4 @@
-"""Vida de un intento paso a paso; el coordinador decide cuándo dar cada paso (5.1).
+"""Vida de un intento paso a paso; el coordinador decide cuándo dar cada paso.
 
 Órdenes que se conservan desde 3.x: el intento se emite (durable) antes de
 enviarse, un resultado se confirma antes del acuse y un plazo vencido se

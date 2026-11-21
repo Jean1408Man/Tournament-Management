@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Escenario cancelled-tournament (guía 4.4: "repetir con torneo cancelado: no
-# puede reabrirse ni avanzar"). Round-robin de tres bots lentos; con la primera
+# Round-robin de tres bots lentos; con la primera
 # partida en curso se cancela el torneo, se mata su worker y se inyecta un
-# resultado tardío. Desde 5.1 las tres partidas corren a la vez: se comparan los
+# resultado tardío. Las tres partidas corren a la vez: se comparan los
 # intentos al cancelar y 20 s después. El torneo debe seguir cancelled, sin
 # intentos ni resultados nuevos, y el resultado tardío queda descartado (tournament_not_running).
 source "$(dirname -- "${BASH_SOURCE[0]}")/../tools/lib.sh"

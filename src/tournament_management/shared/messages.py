@@ -12,9 +12,6 @@ from typing import Self, get_args, get_origin, get_type_hints
 @cache
 def _fields(cls: type) -> dict[str, object]:
     """Tipos de los campos de una clase de mensaje, una vez por clase.
-
-    get_type_hints recompila las anotaciones (cadenas por `from __future__`) en
-    cada llamada: por objeto era ~25 % de la CPU al aceptar un resultado (5.3).
     """
     return get_type_hints(cls)
 

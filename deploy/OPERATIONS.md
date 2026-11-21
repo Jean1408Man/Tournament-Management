@@ -173,17 +173,16 @@ etiquetas, límites, esperas y comprobaciones. No se usa Compose. Para revisar
 un componente: `docker logs --tail 100 NOMBRE_CONTENEDOR`.
 La imagen es de laboratorio; no ofrece aislamiento seguro para código hostil.
 
-## Artefactos internos (etapa 3.2)
+## Artefactos internos
 
 El volumen tm-artifacts se monta en `/var/lib/tm/artifacts` del coordinador.
-Hasta 4.1 los workers lo recibían con `readonly`; desde 4.2 no lo montan ni el
-head ni los workers. Reconstruir la imagen y recrear los contenedores con
+Reconstruir la imagen y recrear los contenedores con
 `start-cluster.sh` aplica el cambio; reiniciar contenedores antiguos no basta.
 
 `tm register-bot` publica y sincroniza un archivo completo antes del commit SQL.
 `tm inspect-bot` consulta el registro y verifica hash/tamaño al leerlo.
 
-### Descarga desde los workers (etapa 4.2)
+### Descarga desde los workers
 
 - El coordinador sirve `GET /internal/artifacts/{hash}` en su puerto 8000. Es
   una ruta interna: no forma parte del contrato `/api/v1` ni del OpenAPI.
@@ -214,7 +213,7 @@ puede dejar objetos completos sin referencia; no hay recolección automática.
 El acceso por hash y el token interno no aíslan código hostil ni restringen a
 un administrador del daemon Docker.
 
-## API y ejecución local (etapa 3.3)
+## API y ejecución local
 
 Reconstruir y recrear incorpora esta etapa conservando los tres volúmenes:
 
@@ -227,8 +226,7 @@ curl -i http://127.0.0.1:8000/ready
 ```
 
 `TM_BACKEND` se lee de `.env` o del entorno. Con `local` las partidas se juegan
-en el coordinador. Desde 4.1, con `ray` se juegan en los workers: el
-coordinador elige el worker, Ray no reintenta y `/api/v1/workers` muestra cada
+en el coordinador. El coordinador elige el worker, Ray no reintenta y `/api/v1/workers` muestra cada
 worker por su hostname (`tm-worker-1`), sin identificadores internos de Ray.
 Los workers arrancan con `--node-name` igual a su hostname; hay que recrear
 los contenedores con la imagen nueva para que lo tengan.
@@ -236,12 +234,9 @@ los contenedores con la imagen nueva para que lo tengan.
 El [recorrido HTTP](../examples/api/README.md) permite registrar bots, ejecutar
 ambos formatos, consultar intentos y reanudar eventos. El cierre del servidor
 limita a cinco segundos la espera por conexiones HTTP activas, incluido SSE.
-Desde 3.4 el arranque reconstruye automáticamente los torneos pendientes con
-backend local, preservando resultados, presupuesto y cancelaciones. Usa un solo
-coordinador activo por base.
 
 
-## Reinicio del coordinador (etapa 3.4)
+## Reinicio del coordinador
 
 Después de reconstruir y recrear con la imagen que contiene esta etapa, para
 reiniciar solo el coordinador conservando PostgreSQL y los artefactos:
@@ -285,7 +280,7 @@ Las pruebas automatizadas de recuperación usan PostgreSQL y HTTP reales con
 SIGKILL de procesos propios. La campaña complementa esas pruebas con fallos
 en el clúster; sus resultados se documentan en `doc/campaign/resultados.md`.
 
-## Membresía, capacidad y plazos (etapa 4.3)
+## Membresía, capacidad y plazos
 
 - `/api/v1/workers` muestra cada worker por su nombre con estado propio:
   - `available`: puede recibir intentos;
@@ -311,7 +306,7 @@ bash deploy/docker/add-worker.sh tm-worker-N
   `stop-cluster.sh` retira también los workers añadidos: con un token viejo se
   reconectarían al head del siguiente arranque.
 
-## Pérdida del head de Ray (etapa 4.4)
+## Pérdida del head de Ray
 
 Observado el 29-10-2026 con `experiments/scenarios/head-loss.sh` (`docker kill
 tm-head` con una partida en curso):
@@ -335,14 +330,14 @@ docker restart tm-coordinator
 curl -i http://127.0.0.1:8000/ready
 ```
 
-Al reiniciar, el coordinador ejecuta la recuperación de la etapa 3: el intento
+Al reiniciar, el coordinador ejecuta la recuperación, el intento
 que estaba en curso queda `lost` (`coordinator_restart`) y se reemplaza con una
 generación nueva. En la prueba, el torneo terminó `completed` con un único
 resultado aceptado, unos 90 s después de empezar la recuperación. Si se
 añadieron workers con `add-worker.sh`, reiniciarlos también. Recrear todo con
 `stop-cluster.sh` + `start-cluster.sh` es equivalente.
 
-## Modo sin Docker (etapa 4.4)
+## Modo sin Docker
 
 Arranque paso a paso en [ARRANQUE.md](ARRANQUE.md). Detalles de operación:
 

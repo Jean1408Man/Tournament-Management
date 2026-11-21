@@ -1,4 +1,4 @@
-"""Lectura de bots por hash desde el coordinador, para los workers (etapa 4.2).
+"""Lectura de bots por hash desde el coordinador, para los workers.
 
 El worker no confía en la red: exige el tamaño anunciado y recalcula el
 SHA-256. Cualquier fallo es ArtifactIntegrityError (un OSError), que el árbitro

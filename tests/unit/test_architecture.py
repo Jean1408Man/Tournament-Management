@@ -28,7 +28,6 @@ DATABASE = {"psycopg", "sqlite3", "sqlalchemy"}
 
 
 def ray_allowed(module: str) -> bool:
-    # Fase 1: diagnóstico en cluster/ray_*; la etapa 4.1 añadirá execution/backends/ray.
     return module.startswith("tournament_management.cluster.ray_") or (
         module == "tournament_management.execution.backends.ray"
     )

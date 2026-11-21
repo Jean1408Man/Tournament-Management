@@ -1,10 +1,10 @@
 """Lectura de la carpeta que guarda dump() en experiments/tools/lib.sh.
 
-Por torneo <t>, todo obtenido por HTTP (E2.2):
+Por torneo <t>, todo obtenido por HTTP:
   <t>.tournament.json  GET /api/v1/tournaments/<t>
   <t>.matches.json     todas las páginas de GET .../matches: {"items": [...], "total": n}
   <t>.events.json      historial SSE leído hasta que el servidor cierra el flujo
-  client.jsonl         opcional (5.1): lo que el cliente recibió en vivo, una
+  client.jsonl         opcional: lo que el cliente recibió en vivo, una
                        línea por 202 (created) o evento SSE (event), con su hora
 Solo se leen archivos: otra persona puede repetir la verificación sobre ellos.
 """

@@ -42,6 +42,9 @@ bot:     {"type":"move","pile":1,"count":2}
   (`TM_OUTPUT_LIMIT_BYTES`).
 - El archivo del bot: hasta 1 MiB (`TM_ARTIFACT_MAX_BYTES`), UTF-8 y sintaxis
   Python válida al registrarlo.
+- Espera de laboratorio del worker (`TM_WORKER_DELAY_MS`, 0 por defecto, hasta
+  60 s): ocurre antes de arrancar los bots, así que no cuenta contra ningún plazo
+  del bot. El coordinador alarga el plazo del intento lo mismo.
 
 ## Derrota o fallo de infraestructura
 

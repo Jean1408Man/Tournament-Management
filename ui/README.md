@@ -133,6 +133,14 @@ Antes que nada, el clúster tiene que estar arrancado.
 - **Arrancar**: levanta PostgreSQL, el head de Ray, los workers configurados y el coordinador. Tarda entre 1 y 2 minutos. En Docker equivale
   a `TM_BACKEND=ray bash deploy/docker/start-cluster.sh`; en local, a
   `bash deploy/local/local-cluster.sh start`.
+  - **Espera (s)**, de 0 a 60: cada worker espera ese tiempo antes de cada
+    partida, con los bots ya descargados y sin arrancar (`TM_WORKER_DELAY_MS`).
+    Sirve para tener tiempo de matar o pausar un worker en plena partida. No
+    cuenta contra ningún plazo del bot y el plazo del intento se alarga lo mismo
+    (90 s + espera). Cada reintento vuelve a esperar. Se fija al arrancar: para
+    cambiarla, **Parar** y **Arrancar** de nuevo. En el log del worker la marcan
+    "Espera de laboratorio antes de la partida" y "Espera terminada". Con 0
+    (por defecto) todo es como siempre; la campaña se ejecuta con 0.
 - **Parar**: detiene todo. Los torneos guardados se conservan para el próximo
   arranque.
 - **Estado**: comprueba que cada pieza responde e imprime la configuración con la
