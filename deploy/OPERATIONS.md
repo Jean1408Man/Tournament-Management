@@ -6,21 +6,21 @@ Guía de diagnóstico y recuperación. Para el primer arranque, sigue
 [ARRANQUE.md](ARRANQUE.md); para comprobar ejecución en cada worker,
 [REMOTE-TESTS.md](REMOTE-TESTS.md).
 
-Una imagen instala Python 3.12.13, uv 0.12.2, el paquete y las dependencias de
-uv.lock, incluido Ray 2.40.0. La etiqueta por defecto es
-tournament-management:step-1.5; TM_IMAGE permite otra. La imagen registra la
-revisión Git (con sufijo dirty si procede). Los contenedores de la
-aplicación se crean mediante el mismo ID inmutable de imagen, aunque la etiqueta
-cambie después; PostgreSQL usa su imagen oficial independiente.
+Dos imágenes sobre Debian 13 instalan Python 3.12.13, uv 0.12.2, el paquete y
+las dependencias de uv.lock, incluido Ray 2.40.0. `worker` (head y workers) no
+lleva PostgreSQL; su etiqueta por defecto es tournament-management:step-1.5 y
+TM_IMAGE permite otra. `coordinator` añade PostgreSQL 17 de Debian y se etiqueta
+como TM_IMAGE con el sufijo `-coordinator`. Las dos registran la misma revisión
+Git (con sufijo dirty si procede). Los contenedores se crean mediante el ID
+inmutable de su imagen, aunque la etiqueta cambie después.
 Las imágenes base se fijan por versión, no por digest: registrar su digest al
 hacer la primera construcción si se necesita reproducción binaria exacta.
 
 | Contenedor | Rol | Límite Docker | Recursos Ray |
 |---|---|---|---|
-| tm-postgres | Persistencia PostgreSQL | Sin límite adicional | No aplica |
 | tm-head | Control y servidor Ray Client | 1 CPU, 2 GiB RAM, 512 MiB shm | CPU=0, GPU=0 |
 | tm-worker-1 … tm-worker-N | Ejecución, una partida a la vez | 1 CPU, `TM_WORKER_MEMORY` (2 GiB) RAM, 512 MiB shm | CPU=1, GPU=0, tm_worker=1 |
-| tm-coordinator | API y driver Ray Client | 1 CPU, 1 GiB RAM | No registra nodo de ejecución |
+| tm-coordinator | API, driver Ray Client y su PostgreSQL local | 2 CPU, 2 GiB RAM (compartidos con la base) | No registra nodo de ejecución |
 
 N = `TM_WORKERS`, en `.env` o en el entorno. Para
 añadir uno con el clúster en marcha: `bash deploy/docker/add-worker.sh tm-worker-N`;
@@ -30,17 +30,22 @@ Son límites, no reservas físicas. Dimensiona CPU y memoria según la cantidad 
 `docker stats` y ajusta
 `TM_WORKER_MEMORY` si no caben. Cada nodo
 Ray usa 256 MiB de object store. Los valores están en start-cluster.sh.
-El coordinador conserva su estado local en tm-state y PostgreSQL sus datos en
-tm-postgres-data. Los ejecutables se guardan en tm-artifacts, que solo monta el
-coordinador. Desde 4.2 los workers no tienen ese volumen ni credenciales SQL:
-descargan cada bot por hash desde el coordinador (ver "Artefactos internos").
-Los tres volúmenes se preservan al detener el clúster. El
-arranque requiere que la imagen `postgres:16.6-bookworm` esté disponible y crea
-la base `tournament_management`; el coordinador aplica el esquema idempotente.
-Copiar `.env.example` a `.env` y configurar `TM_POSTGRES_PASSWORD` con letras y
-números antes de arrancar. Los scripts leen ese archivo sin ejecutarlo; una
-variable ya exportada tiene prioridad. Una base existente conserva la contraseña
-que tenía, incluso si se modifica `.env`.
+El coordinador conserva su estado local en tm-state y su PostgreSQL los datos en
+tm-postgres-data, montado en /var/lib/postgresql/data. Los ejecutables se
+guardan en tm-artifacts. Los tres volúmenes los monta solo el coordinador. 
+
+PostgreSQL corre dentro del contenedor del coordinador, como usuario postgres,
+con `listen_addresses=''`: solo atiende por el socket /run/postgresql, sin
+puerto, así que ningún otro nodo puede alcanzarla y no hace falta contraseña.
+Al arrancar, el entrypoint crea la base si el volumen está vacío, espera a que
+acepte conexiones, aplica el esquema idempotente y lanza `tm serve`. Vigila los
+dos procesos: si termina uno, para el otro y el contenedor sale con error. Ante
+`docker stop` para primero `tm serve` y después PostgreSQL (parada rápida), dentro
+de los 20 s de `--stop-timeout`. Sus registros salen en `docker logs tm-coordinator`.
+
+`.env` es opcional (copia de `.env.example`). Los scripts leen ese archivo sin
+ejecutarlo; una variable ya exportada tiene prioridad.
+
 
 La red bridge tm-net es local a un host Docker. Solo se publica
 127.0.0.1:8000 hacia el puerto 8000 del coordinador. Ray 6379/10001 no se
@@ -85,7 +90,6 @@ Desde la raíz del repositorio:
 
 ```bash
 docker info
-docker pull postgres:16.6-bookworm
 bash deploy/docker/build-image.sh
 TM_BACKEND=ray bash deploy/docker/start-cluster.sh
 bash deploy/docker/cluster-status.sh
@@ -93,8 +97,8 @@ curl http://127.0.0.1:8000/health
 curl -i http://127.0.0.1:8000/ready
 ```
 
-build-image.sh es el paso que puede descargar la imagen base, uv, dependencias
-y herramientas de construcción. La instalación uv no modifica uv.lock.
+build-image.sh es el paso que puede descargar la imagen base, uv, dependencias,
+PostgreSQL y herramientas de construcción. La instalación uv no modifica uv.lock.
 start-cluster.sh exige imagen local y usa --pull never.
 
 ### Reintentar tras un fallo de conexión
@@ -129,9 +133,10 @@ Docker la elimina por espacio. No ejecutar limpiezas de caché entre intentos.
 Referencia: [caché uv en Docker](https://docs.astral.sh/uv/guides/integration/docker/#caching)
 y [opciones HTTP de uv](https://docs.astral.sh/uv/configuration/environment/).
 
-Resultado esperado: PostgreSQL disponible, el head sin CPU para partidas y
-los workers configurados con CPU, contenedores de aplicación con la misma imagen,
-resolución DNS interna y API saludable.
+Resultado esperado: la base local del coordinador responde por socket y no
+escucha en la red, el head sin CPU para partidas y los workers configurados con
+CPU, head y workers con la misma imagen y sin PostgreSQL, el coordinador con la
+misma revisión, resolución DNS interna y API saludable.
 `/ready` devuelve 200 con esquema migrado, almacenamiento disponible y
 coordinador sano, con cualquiera de los dos backends. Con Ray, la falta de
 workers no cambia `/ready`; se ve en `/api/v1/workers`. `/health` solo
@@ -193,8 +198,8 @@ Reconstruir la imagen y recrear los contenedores con
 - `start-cluster.sh` genera un token aleatorio en cada arranque (salvo que
   `TM_INTERNAL_TOKEN` esté exportado) y lo pasa al coordinador y a los
   workers. Los workers reciben además `TM_ARTIFACT_URL=http://tm-coordinator:8000`.
-  El token no se guarda en `.env`, pero es visible con `docker inspect`, igual
-  que la contraseña de PostgreSQL: es un control de laboratorio.
+  El token no se guarda en `.env`, pero es visible con `docker inspect`: es un
+  control de laboratorio.
 - Cada intento descarga sus dos bots, comprueba tamaño y SHA-256 y los copia a
   una carpeta temporal propia que se borra al terminar. No hay caché. Una
   descarga fallida, cortada o corrupta es un fallo de infraestructura y nunca
@@ -207,7 +212,8 @@ Reconstruir la imagen y recrear los contenedores con
   automáticamente ni se acepta otro código bajo el mismo hash.
 
 Conservar y respaldar tm-artifacts junto con tm-postgres-data: conservar solo la
-base no conserva los bytes. Los archivos `.upload-*` que pueda dejar un corte
+base no conserva los bytes. La base se respalda dentro del coordinador:
+`docker exec tm-coordinator pg_dump -h /run/postgresql -U tm tournament_management > respaldo.sql`. Los archivos `.upload-*` que pueda dejar un corte
 abrupto no se anuncian ni se ejecutan. Un fallo SQL posterior a la publicación
 puede dejar objetos completos sin referencia; no hay recolección automática.
 El acceso por hash y el token interno no aíslan código hostil ni restringen a
@@ -239,7 +245,9 @@ limita a cinco segundos la espera por conexiones HTTP activas, incluido SSE.
 ## Reinicio del coordinador
 
 Después de reconstruir y recrear con la imagen que contiene esta etapa, para
-reiniciar solo el coordinador conservando PostgreSQL y los artefactos:
+reiniciar solo el coordinador conservando PostgreSQL y los artefactos (la base
+vive en el mismo contenedor: se reinicia con él y sus datos siguen en
+tm-postgres-data):
 
 ```bash
 docker restart tm-coordinator
@@ -262,8 +270,10 @@ docker start tm-coordinator
 curl -i http://127.0.0.1:8000/ready
 ```
 
-Después, consultar el mismo torneo y su historial de intentos usando los
-comandos de examples/api/README.md. Si quedó un intento sin confirmar debe
+El SIGKILL corta también a PostgreSQL sin aviso: al volver, `docker logs`
+muestra cómo rehace su registro de cambios antes de aceptar conexiones, y lo
+confirmado se conserva. Después, consultar el mismo torneo y su historial de
+intentos usando los comandos de examples/api/README.md. Si quedó un intento sin confirmar debe
 aparecer lost y, si hay presupuesto, un reemplazo con otro ID y generación.
 Si el resultado alcanzó a confirmarse antes del corte se conserva accepted;
 no se exige perder un resultado que ya era durable. Los torneos de ejemplo

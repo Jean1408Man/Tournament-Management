@@ -16,9 +16,10 @@ event=$(wait_event "$tournament" attempt.dispatched 60)
 sleep 3
 attempts_sql="SELECT a.attempt_id FROM attempts a JOIN matches m USING (match_id)
   WHERE m.tournament_id = '$tournament' AND a.state = '%s' ORDER BY a.attempt_id"
-coordinator_kill
+coordinator_freeze
 running=$(db_scalar "$(printf "$attempts_sql" running)" | paste -sd, -)
 accepted=$(db_scalar "$(printf "$attempts_sql" accepted)" | paste -sd, -)
+coordinator_kill
 log "Matado el coordinador; en curso: ${running:-ninguno}; aceptados: ${accepted:-ninguno}"
 sleep "$down"
 log "/ready con el coordinador caído: $(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$API/ready" || true)"

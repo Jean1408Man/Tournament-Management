@@ -11,8 +11,6 @@ PROJECT_DIR="$(cd -- "$TOOLS_DIR/../.." && pwd)"
 # Rutas relativas a la raíz: valen igual para Python de Windows (Git Bash) y de Linux.
 cd "$PROJECT_DIR"
 API="${TM_API:-http://127.0.0.1:8000}"
-# Sin MSYS_NO_PATHCONV: estos scripts no pasan rutas a docker, y en Git Bash el
-# curl de Windows necesita que /dev/null se convierta.
 PILES="${TM_SCENARIO_PILES:-[10,10,10]}"
 
 PY=""
@@ -226,6 +224,21 @@ worker_restore() {  # vuelve a arrancar el worker y espera a verlo available con
   done
   log "Aviso: $name no volvió a available con un solo nodo Ray en 120 s"
 }
+coordinator_freeze() {  
+  if [[ $MODE == docker ]]; then
+    MSYS_NO_PATHCONV=1 docker exec tm-coordinator python -c '
+import os, signal
+for pid in filter(str.isdigit, os.listdir("/proc")):
+    try:
+        argv = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0")
+    except OSError:
+        continue
+    if b"serve" in argv and any(a.endswith(b"/tm") for a in argv):
+        os.kill(int(pid), signal.SIGSTOP)'
+  else
+    $LOCAL_CLUSTER pause coordinator >/dev/null
+  fi
+}
 coordinator_kill() {
   if [[ $MODE == docker ]]; then docker kill --signal KILL tm-coordinator >/dev/null; else $LOCAL_CLUSTER kill coordinator >/dev/null; fi
 }
@@ -267,9 +280,10 @@ cluster_recover() {  # procedimiento de recuperación tras perder el head (OPERA
     $LOCAL_CLUSTER recover >/dev/null
   fi
 }
-db_scalar() {  # consulta SQL de solo lectura sobre la base del clúster
+db_scalar() {  
   if [[ $MODE == docker ]]; then
-    docker exec tm-postgres psql -U tm -d tournament_management -Atc "$1"
+    MSYS_NO_PATHCONV=1 docker exec tm-coordinator psql -h /run/postgresql -U tm \
+      -d tournament_management -Atc "$1"
   else
     "$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)/psql" "$LOCAL_DB" -Atc "$1"
   fi

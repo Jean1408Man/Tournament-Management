@@ -11,8 +11,9 @@ if docker container inspect "$name" >/dev/null 2>&1; then
 fi
 owned_container tm-head
 owned_container tm-coordinator
-# Misma revisión que el resto del clúster, aunque la etiqueta haya cambiado.
-image_id="$(docker container inspect --format '{{.Image}}' tm-coordinator)"
+# La imagen del head (la de los workers, sin PostgreSQL): misma revisión que el
+# resto del clúster, aunque la etiqueta haya cambiado.
+image_id="$(docker container inspect --format '{{.Image}}' tm-head)"
 token="$(docker container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' tm-coordinator |
   sed -n 's/^TM_INTERNAL_TOKEN=//p')"
 [[ -n "$token" ]] || die "El coordinador no tiene TM_INTERNAL_TOKEN: recrea el clúster con start-cluster.sh."

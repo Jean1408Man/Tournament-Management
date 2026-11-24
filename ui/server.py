@@ -384,8 +384,9 @@ def query(mode: str, sql: str) -> object:
     """Consulta de solo lectura (como db_scalar de lib.sh) que devuelve un JSON."""
     readonly = "-c default_transaction_read_only=on"
     if mode == "docker":
-        argv = ["docker", "exec", "-e", f"PGOPTIONS={readonly}", "tm-postgres",
-                "psql", "-U", "tm", "-d", "tournament_management", "-Atc", sql]
+        argv = ["docker", "exec", "-e", f"PGOPTIONS={readonly}", "tm-coordinator",
+                "psql", "-h", "/run/postgresql", "-U", "tm", "-d", "tournament_management",
+                "-Atc", sql]
         env = None
     else:
         bins = sorted(Path("/usr/lib/postgresql").glob("*/bin/psql"),
