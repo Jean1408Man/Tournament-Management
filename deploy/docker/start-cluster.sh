@@ -2,8 +2,6 @@
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 require_docker
-[[ "$TM_POSTGRES_PASSWORD" =~ ^[a-zA-Z0-9]+$ ]] ||
-  die "Configura TM_POSTGRES_PASSWORD en .env usando solo letras y números."
 [[ "${TM_BACKEND:-local}" == local || "${TM_BACKEND:-local}" == ray ]] || die "TM_BACKEND debe ser local o ray."
 command -v timeout >/dev/null || die "Se requiere timeout (GNU coreutils)."
 [[ "$TM_ARTIFACT_MAX_BYTES" =~ ^[1-9][0-9]*$ ]] || die "TM_ARTIFACT_MAX_BYTES debe ser positivo."
@@ -17,11 +15,16 @@ fi
   die "TM_INTERNAL_TOKEN debe tener al menos 16 letras o números."
 image_id="$(docker image inspect --format '{{.Id}}' "$TM_IMAGE")" ||
   die "Imagen local ausente. Ejecuta bash deploy/docker/build-image.sh."
+coordinator_image_id="$(docker image inspect --format '{{.Id}}' "$TM_COORDINATOR_IMAGE")" ||
+  die "Imagen del coordinador ausente. Ejecuta bash deploy/docker/build-image.sh."
 for name in "${TM_CONTAINERS[@]}"; do
   if docker container inspect "$name" >/dev/null 2>&1; then
     die "Ya existe $name. Revisa el clúster y usa stop-cluster.sh antes de recrearlo."
   fi
 done
+if docker container inspect tm-postgres >/dev/null 2>&1; then
+  die "Queda tm-postgres de una versión anterior. Retíralo con stop-cluster.sh."
+fi
 if docker network inspect tm-net >/dev/null 2>&1; then
   owned network tm-net
   [[ "$(docker network inspect --format '{{.Driver}}' tm-net)" == bridge ]] ||
@@ -52,14 +55,6 @@ trap 'status=$?; printf "Arranque falló (código %s), línea %s: %s\n" "$status
 base=("${TM_RUN_BASE[@]}")
 ray_limits=("${TM_RAY_LIMITS[@]}")
 
-docker image inspect "$TM_POSTGRES_IMAGE" >/dev/null 2>&1 ||
-  die "Imagen PostgreSQL ausente ($TM_POSTGRES_IMAGE). Descárgala explícitamente antes de arrancar."
-docker run "${base[@]}" --name tm-postgres --hostname tm-postgres \
-  --mount source=tm-postgres-data,target=/var/lib/postgresql/data \
-  --env POSTGRES_DB=tournament_management --env POSTGRES_USER=tm \
-  --env POSTGRES_PASSWORD="$TM_POSTGRES_PASSWORD" "$TM_POSTGRES_IMAGE"
-wait_for "PostgreSQL" docker exec tm-postgres pg_isready -U tm -d tournament_management
-
 docker run "${base[@]}" "${ray_limits[@]}" --name tm-head --hostname tm-head \
   "$image_id" ray-head
 wait_for "control de Ray" docker exec tm-head timeout --kill-after=2 12 \
@@ -80,15 +75,18 @@ limits=()
 for key in TM_MAX_RUNNING_ATTEMPTS TM_MAX_ACTIVE_TOURNAMENTS; do
   if [[ -n "${!key:-}" ]]; then limits+=(--env "$key=${!key}"); fi
 done
+# PostgreSQL corre dentro del coordinador, solo por socket y sin puerto: la
+# imagen fija TM_DATABASE_URL y la ruta de datos. 2 CPU y 2 GiB porque la base
+# comparte el contenedor con la API y el coordinador (L5).
 docker run "${base[@]}" "${limits[@]}" --name tm-coordinator --hostname tm-coordinator \
-  --cpus 1 --memory 1g --publish "127.0.0.1:${TM_API_PORT:-8000}:8000" \
+  --cpus 2 --memory 2g --publish "127.0.0.1:${TM_API_PORT:-8000}:8000" \
   --mount source=tm-state,target=/var/lib/tm \
   --mount source=tm-artifacts,target=/var/lib/tm/artifacts \
+  --mount source=tm-postgres-data,target=/var/lib/postgresql/data \
   --env TM_RAY_ADDRESS=ray://tm-head:10001 \
-  --env "TM_DATABASE_URL=postgresql://tm:${TM_POSTGRES_PASSWORD}@tm-postgres:5432/tournament_management" \
   --env "TM_BACKEND=${TM_BACKEND:-local}" --env TM_HTTP_HOST=0.0.0.0 \
   --env "TM_INTERNAL_TOKEN=$TM_INTERNAL_TOKEN" --env "TM_WORKER_DELAY_MS=$TM_WORKER_DELAY_MS" \
-  "$image_id" coordinator
+  "$coordinator_image_id" coordinator
 wait_for "API del coordinador" docker exec tm-coordinator python -c \
   'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).read()'
 bash "$TM_SCRIPT_DIR/cluster-status.sh"

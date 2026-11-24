@@ -3,8 +3,10 @@
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -149,6 +151,7 @@ def fake_commands(tmp_path):
         "    if os.environ.get('TEST_START') and sys.argv[1:3] == ['container', 'inspect']:\n"
         "        calls = [json.loads(line) for line in open(os.environ['COMMAND_LOG'])]\n"
         "        created = [c[c.index('--name')+1] for c in calls if '--name' in c]\n"
+        "        created += os.environ.get('TEST_PRESENT', '').split(',')\n"
         "        if sys.argv[-1] not in created:\n"
         "            sys.exit(1)\n"
         "    if not os.environ.get('TEST_OWNED'):\n"
@@ -162,7 +165,7 @@ def fake_commands(tmp_path):
         "    elif '{{.State.Running}}' in sys.argv:\n"
         "        print('true')\n"
         "    elif os.environ.get('TEST_DIFFERENT_IMAGES') and '{{.Image}}' in sys.argv:\n"
-        "        print('postgres-image' if 'tm-postgres' in sys.argv else 'app-image')\n"
+        "        print('coordinator-image' if 'tm-coordinator' in sys.argv else 'app-image')\n"
         "    else:\n"
         "        print('same-image')\n"
         "if 'exec' in sys.argv and 'timeout' in sys.argv:\n"
@@ -265,15 +268,13 @@ def test_dotenv_read_as_data_and_environment_wins(fake_commands, tmp_path):
     env, _ = fake_commands
     config = tmp_path / "settings.env"
     marker = tmp_path / "executed"
-    config.write_text(
-        f"TM_API_PORT=8765\nTM_POSTGRES_PASSWORD=fromfile\nIGNORED=$(touch {marker})\n"
-    )
-    env.update(TM_ENV_FILE=str(config), TM_POSTGRES_PASSWORD="fromenvironment")
+    config.write_text(f"TM_API_PORT=8765\nTM_BACKEND=fromfile\nIGNORED=$(touch {marker})\n")
+    env.update(TM_ENV_FILE=str(config), TM_BACKEND="fromenvironment")
     result = subprocess.run(
         [
             "bash",
             "-c",
-            'source "$1"; printf "%s %s" "$TM_API_PORT" "$TM_POSTGRES_PASSWORD"',
+            'source "$1"; printf "%s %s" "$TM_API_PORT" "$TM_BACKEND"',
             "test",
             str(ROOT / "deploy/docker/common.sh"),
         ],
@@ -308,7 +309,7 @@ def test_stop_uses_timeout_and_preserves_volume(fake_commands):
 
 def start_runs(fake_commands, **extra):
     env, calls = fake_commands
-    env.update(TEST_OWNED="1", TEST_START="1", TM_POSTGRES_PASSWORD="testonly", **extra)
+    env.update(TEST_OWNED="1", TEST_START="1", **extra)
     result = subprocess.run(
         ["bash", str(ROOT / "deploy/docker/start-cluster.sh")],
         env=env,
@@ -344,6 +345,67 @@ def test_start_gives_workers_download_access_without_shared_volume(fake_commands
     assert env_value(runs["tm-head"], "TM_INTERNAL_TOKEN") is None
 
 
+def test_start_runs_the_database_inside_the_coordinator(fake_commands):
+    runs = start_runs(fake_commands)
+    assert "tm-postgres" not in runs
+    coordinator = runs["tm-coordinator"]
+    assert coordinator[coordinator.index("--cpus") + 1] == "2"
+    assert coordinator[coordinator.index("--memory") + 1] == "2g"
+    assert "source=tm-postgres-data,target=/var/lib/postgresql/data" in coordinator
+    # La URL de la base la fija la imagen del coordinador: no viaja en el arranque.
+    assert env_value(coordinator, "TM_DATABASE_URL") is None
+    for name in runs.keys() - {"tm-coordinator"}:
+        assert not any("tm-postgres-data" in arg for arg in runs[name])
+    commands = [json.loads(line)[1:] for line in fake_commands[1].read_text().splitlines()]
+    images = [args[-1] for args in commands if args[:2] == ["image", "inspect"]]
+    assert images[:2] == [
+        "tournament-management:step-1.5", "tournament-management:step-1.5-coordinator"
+    ]
+
+
+def test_start_refuses_while_the_old_database_container_exists(fake_commands):
+    env, calls = fake_commands
+    env.update(TEST_OWNED="1", TEST_START="1", TEST_PRESENT="tm-postgres")
+    result = subprocess.run(
+        ["bash", str(ROOT / "deploy/docker/start-cluster.sh")],
+        env=env, capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode != 0
+    assert "tm-postgres" in result.stderr
+    commands = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
+    assert not any(args[0] in {"run", "volume", "network"} for args in commands)
+
+
+def test_build_creates_worker_and_coordinator_images(fake_commands):
+    env, calls = fake_commands
+    result = subprocess.run(
+        ["bash", str(ROOT / "deploy/docker/build-image.sh")],
+        env=env, capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    builds = [json.loads(line)[1:] for line in calls.read_text().splitlines()]
+    assert [
+        (args[args.index("--target") + 1], args[args.index("--tag") + 1])
+        for args in builds
+        if args[0] == "build"
+    ] == [
+        ("worker", "tournament-management:step-1.5"),
+        ("coordinator", "tournament-management:step-1.5-coordinator"),
+    ]
+
+
+def test_only_the_coordinator_image_installs_postgresql():
+    text = (ROOT / "deploy/docker/Dockerfile").read_text(encoding="utf-8")
+    stages = {}
+    for block in text.split("\nFROM ")[1:]:
+        header, _, body = block.partition("\n")
+        stages[header.split(" AS ")[1].strip()] = body
+    assert stages.keys() == {"base", "worker", "coordinator"}
+    assert '"postgresql-$PG_MAJOR"' in stages["coordinator"]
+    assert "postgresql" not in stages["base"].lower()
+    assert "postgresql" not in stages["worker"].lower()
+
+
 def test_worker_count_and_memory_are_configured_in_one_place(fake_commands):
     runs = start_runs(fake_commands, TM_WORKERS="2", TM_WORKER_MEMORY="1536m")
     workers = [name for name in runs if name.startswith("tm-worker-")]
@@ -355,7 +417,7 @@ def test_worker_count_and_memory_are_configured_in_one_place(fake_commands):
 @pytest.mark.parametrize("value", ["0", "dos", "-1"])
 def test_invalid_worker_count_is_rejected(fake_commands, value):
     env, calls = fake_commands
-    env.update(TEST_OWNED="1", TM_POSTGRES_PASSWORD="testonly", TM_WORKERS=value)
+    env.update(TEST_OWNED="1", TM_WORKERS=value)
     result = subprocess.run(
         ["bash", str(ROOT / "deploy/docker/start-cluster.sh")],
         env=env, capture_output=True, text=True,
@@ -398,6 +460,9 @@ def test_add_worker_reuses_image_and_token_without_volume(fake_commands):
     assert env_value(run, "TM_INTERNAL_TOKEN") == "b" * 32
     assert env_value(run, "TM_DATABASE_URL") is None
     assert not any("tm-artifacts" in arg for arg in run)
+    # La imagen sale del head: la del coordinador lleva PostgreSQL.
+    commands = [json.loads(line)[1:] for line in fake_commands[1].read_text().splitlines()]
+    assert ["container", "inspect", "--format", "{{.Image}}", "tm-head"] in commands
 
 
 @pytest.mark.parametrize(
@@ -446,3 +511,111 @@ def test_coordinator_entrypoint_honors_execution_backend(fake_commands):
     assert result.returncode == 0, result.stderr
     command = json.loads(calls.read_text().splitlines()[0])
     assert command[command.index("--backend") + 1] == "local"
+
+
+@pytest.fixture
+def local_database(tmp_path):
+    # Dobles de PostgreSQL y tm en Python: atrapan SIGINT aunque bash lo ignore en
+    # sus procesos en segundo plano, igual que el PostgreSQL real.
+    program = (
+        "#!" + str(Path(sys.executable).resolve()) + "\n"
+        "import json, os, signal, sys, time\n"
+        "name, args = os.path.basename(sys.argv[0]), sys.argv[1:]\n"
+        "role = 'serve' if name == 'tm' and args[:1] == ['serve'] else name\n"
+        "def log(text):\n"
+        "    with open(os.environ['LOG'], 'a') as f:\n"
+        "        f.write(text + '\\n')\n"
+        "def stop(sig, _):\n"
+        "    log(f'{role}-{signal.Signals(sig).name}')\n"
+        "    sys.exit(0)\n"
+        "signal.signal(signal.SIGINT, stop)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        "if name == 'setpriv':\n"
+        "    rest = args[args.index('--') + 1:]\n"
+        "    os.execvp(rest[0], rest)\n"
+        "log(json.dumps([name, *args]))\n"
+        "if name == 'initdb':\n"
+        "    with open(os.path.join(args[args.index('-D') + 1], 'PG_VERSION'), 'w') as f:\n"
+        "        f.write('17\\n')\n"
+        "if role in ('postgres', 'serve'):\n"
+        "    code = os.environ.get('FAKE_EXIT_' + role.upper())\n"
+        "    if code:\n"
+        "        time.sleep(3)\n"
+        "        log(role + '-exit')\n"
+        "        sys.exit(int(code))\n"
+        "    while True:\n"
+        "        time.sleep(0.1)\n"
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("setpriv", "chown", "initdb", "postgres", "pg_isready", "psql", "createdb", "tm"):
+        path = bin_dir / name
+        path.write_text(program)
+        path.chmod(0o755)
+    data = tmp_path / "data"
+    data.mkdir()
+    log = tmp_path / "log"
+    env = {key: value for key, value in os.environ.items() if not key.startswith("TM_")}
+    env.update(
+        PATH=str(bin_dir) + ":" + env["PATH"], LOG=str(log), TM_PGDATA=str(data), PG_MAJOR="17",
+        TM_DATABASE_URL="postgresql:///tournament_management?host=/run/postgresql&user=tm",
+    )
+    return env, data, log
+
+
+def coordinator_with_local_database(env):
+    return subprocess.Popen(
+        ["bash", str(ROOT / "deploy/docker/entrypoint.sh"), "coordinator"],
+        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+    )
+
+
+def logged(log):
+    return log.read_text().splitlines() if log.exists() else []
+
+
+def test_local_database_starts_before_the_server_and_stops_after_it(local_database):
+    env, _, log = local_database
+    process = coordinator_with_local_database(env)
+    deadline = time.monotonic() + 15
+    while not any(line.startswith('["tm", "serve"') for line in logged(log)):
+        assert process.poll() is None and time.monotonic() < deadline, process.stderr.read()
+        time.sleep(0.1)
+    process.send_signal(signal.SIGTERM)  # lo que hace docker stop
+    assert process.wait(timeout=15) == 0, process.stderr.read()
+    lines = logged(log)
+    calls = [json.loads(line) for line in lines if line.startswith("[")]
+    initdb = next(call for call in calls if call[0] == "initdb")
+    assert initdb[initdb.index("-A") + 1] == "trust"
+    postgres = next(call for call in calls if call[0] == "postgres")
+    assert "listen_addresses=" in postgres  # sin puerto: solo el socket
+    assert any(call[0] == "createdb" for call in calls)
+    order = [call[:2] for call in calls if call[0] == "tm"]
+    assert order == [["tm", "migrate"], ["tm", "serve"]]
+    # Primero el servidor, después la base: nadie escribe con la base parada.
+    assert lines[-2:] == ["serve-SIGTERM", "postgres-SIGINT"]
+
+
+def test_local_database_of_another_version_is_never_used(local_database):
+    env, data, log = local_database
+    (data / "PG_VERSION").write_text("16\n")
+    process = coordinator_with_local_database(env)
+    assert process.wait(timeout=15) == 1
+    assert "PostgreSQL 16" in process.stderr.read()
+    assert not any(line.startswith(('["initdb"', '["postgres"', '["tm"')) for line in logged(log))
+    assert (data / "PG_VERSION").read_text() == "16\n"
+
+
+def test_server_stops_when_local_database_dies(local_database):
+    env, _, log = local_database
+    process = coordinator_with_local_database({**env, "FAKE_EXIT_POSTGRES": "7"})
+    assert process.wait(timeout=20) == 1
+    assert "PostgreSQL terminó" in process.stderr.read()
+    assert logged(log)[-2:] == ["postgres-exit", "serve-SIGTERM"]
+
+
+def test_local_database_stops_when_server_ends(local_database):
+    env, _, log = local_database
+    process = coordinator_with_local_database({**env, "FAKE_EXIT_SERVE": "3"})
+    assert process.wait(timeout=20) == 3
+    assert logged(log)[-2:] == ["serve-exit", "postgres-SIGINT"]

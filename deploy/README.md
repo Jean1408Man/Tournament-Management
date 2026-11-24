@@ -8,13 +8,19 @@ Todo lo necesario para levantar el sistema, con Docker o sin él. Guías:
 
 Se ejecutan con bash desde cualquier carpeta.
 
-- `Dockerfile`: imagen única con el paquete y sus dependencias bloqueadas.
+- `Dockerfile`: dos imágenes con el mismo paquete y sus dependencias
+  bloqueadas: `worker` (head y workers, sin PostgreSQL) y `coordinator` (con
+  PostgreSQL 17, su base local).
 - `entrypoint.sh`: elige el rol del contenedor (`coordinator`, `ray-head` o
-  `ray-worker`).
-- `build-image.sh`: construye la imagen; es el único script que descarga.
-- `start-cluster.sh`: red, volúmenes, PostgreSQL, head, workers y coordinador,
-  con esperas y diagnóstico si algo falla.
-- `cluster-status.sh`: imagen común, membresía Ray, DNS y almacenamiento.
+  `ray-worker`). En la imagen del coordinador arranca antes PostgreSQL, solo
+  por socket, y vigila los dos procesos: si uno termina, para el otro y el
+  contenedor sale con error.
+- `build-image.sh`: construye las dos imágenes; es el único script que descarga.
+- `start-cluster.sh`: red, volúmenes, head, workers y coordinador (con su
+  base), con esperas y diagnóstico si algo falla.
+- `cluster-status.sh`: imágenes y revisión, membresía Ray, DNS, que la base
+  responde en el coordinador sin escuchar en la red, que ningún otro nodo tiene
+  PostgreSQL, y almacenamiento.
 - `probe-cluster.sh`: una tarea fijada a cada worker (identidad y versiones).
 - `probe-artifact.sh SHA256`: cada worker descarga y verifica un bot.
 - `add-worker.sh tm-worker-N`: añade un worker con el clúster en marcha.
@@ -27,9 +33,9 @@ Se ejecutan con bash desde cualquier carpeta.
   el coordinador alarga el plazo del intento lo mismo. `add-worker.sh` copia la
   del coordinador en marcha.
 
-El volumen `tm-artifacts` conserva los bots al recrear el clúster; solo el
-coordinador lo monta con escritura y los workers no reciben credenciales de
-PostgreSQL.
+El volumen `tm-artifacts` conserva los bots y `tm-postgres-data` la base al
+recrear el clúster; solo el coordinador los monta. Los workers no tienen
+PostgreSQL ni forma de llegar a la base del coordinador.
 
 ## `local/` — sin Docker (Linux o WSL)
 

@@ -1,12 +1,13 @@
 # Arranque: con Docker o sin Docker
 
 Los dos modos ejecutan lo mismo: API, coordinador, Ray (un head y la cantidad configurada de workers) y
-PostgreSQL, con las partidas en los workers (`TM_BACKEND=ray`). Cambia dónde
-vive cada pieza:
+PostgreSQL, con las partidas en los workers (`TM_BACKEND=ray`). En los dos, la
+base es local al coordinador y solo atiende por socket, sin puerto de red.
+Cambia dónde vive cada pieza:
 
 | | Con Docker | Sin Docker |
 |---|---|---|
-| Dónde corre | Contenedores (`tm-postgres`, `tm-head`, `tm-worker-N`, `tm-coordinator`) | Procesos de Linux/WSL |
+| Dónde corre | Contenedores (`tm-head`, `tm-worker-N`, `tm-coordinator` con PostgreSQL dentro) | Procesos de Linux/WSL |
 | Datos | Volúmenes `tm-postgres-data`, `tm-artifacts`, `tm-state` | `~/.local/share/tournament-management/` (`TM_LOCAL_HOME`) |
 | Persisten al parar | Sí | Sí |
 | Límites de CPU y memoria por componente, aislamiento de archivos | Sí | No: todos los procesos comparten la máquina |
@@ -15,12 +16,11 @@ Usa **un modo a la vez**: los dos publican la API en `http://127.0.0.1:8000`.
 
 ## Con Docker
 
-Requisitos: Docker Desktop (o Docker en Linux) en marcha, bash y `.env` copiado
-de `.env.example` con `TM_POSTGRES_PASSWORD` (solo letras y números).
+Requisitos: Docker Desktop (o Docker en Linux) en marcha y bash. `.env` es
+opcional (copia de `.env.example`) y no lleva contraseña de base de datos.
 
-```bash
-docker pull postgres:16.6-bookworm
-```
+`build-image.sh` construye dos imágenes: `TM_IMAGE` para el head y los workers,
+sin PostgreSQL, y `TM_IMAGE-coordinator` con PostgreSQL 17.
 
 ```bash
 bash deploy/docker/build-image.sh

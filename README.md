@@ -1,7 +1,7 @@
 # Tournament Management
 
 Plataforma distribuida para ejecutar torneos de bots de Nim. Un coordinador
-guarda el estado en PostgreSQL y reparte las partidas entre varios workers; en
+guarda el estado en su PostgreSQL local y reparte las partidas entre varios workers; en
 esta Fase 1 los workers se coordinan con Ray. Si un worker falla, la partida se
 repite en otro sin perder ni duplicar resultados.
 
@@ -30,25 +30,23 @@ faltan las herramientas básicas, instala `git`, `curl` y `python3` con el
 gestor de paquetes. Comprueba antes que `docker info` funciona; en Linux,
 inicia Docker si está detenido y usa una cuenta con permiso para ejecutarlo.
 
-Copia la configuración y pon una contraseña (solo letras y números) en
-`TM_POSTGRES_PASSWORD`:
+La configuración por defecto sirve tal cual. La base de datos no necesita
+contraseña: vive dentro del coordinador y solo atiende por su socket, sin
+puerto de red. Para cambiar alguna opción (por ejemplo `TM_WORKERS`), copia la
+plantilla y edítala con cualquier editor, por ejemplo `nano .env`; el script de
+arranque lee este archivo:
 
 ```bash
 cp .env.example .env
 ```
 
-Edita `.env` con cualquier editor de texto, por ejemplo `nano .env`, y cambia
-`TM_POSTGRES_PASSWORD=` por `TM_POSTGRES_PASSWORD=ClaveDemo123`. Usa tu propia
-clave; no añadas comillas ni espacios. El script de arranque lee este archivo.
 En la ruta sin Docker, el clúster local crea su propia base de datos.
 
 ## 2. Arrancar el sistema
 
-Con Docker (PostgreSQL, el head de Ray, los workers configurados y el coordinador):
-
-```bash
-docker pull postgres:16.6-bookworm
-```
+Con Docker (el head de Ray, los workers configurados y el coordinador con su
+PostgreSQL local). La construcción crea dos imágenes: la del head y los workers,
+sin PostgreSQL, y la del coordinador, con PostgreSQL 17:
 
 ```bash
 bash deploy/docker/build-image.sh

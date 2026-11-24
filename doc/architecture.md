@@ -1,7 +1,7 @@
 # Arquitectura
 
 El sistema ejecuta torneos de bots de Nim. Un **coordinador** guarda todo el
-estado en PostgreSQL, decide qué partida se juega y dónde, y acepta los
+estado en su PostgreSQL local, decide qué partida se juega y dónde, y acepta los
 resultados. Los **workers** juegan las partidas. **Ray** solo transporta cada
 intento al worker elegido y avisa si muere. El mismo diseño corre en
 contenedores Docker o como procesos en Linux/WSL.
@@ -14,8 +14,8 @@ flowchart LR
     subgraph COORD[Coordinador]
         API[API HTTP] --- LOOP[Hilo coordinador]
         LOOP --- DRV[Driver Ray Client]
+        LOOP -- "SQL por socket Unix" --> PG[(PostgreSQL local)]
     end
-    COORD -- "SQL" --> PG[(PostgreSQL)]
     COORD --- ART[(Bots por SHA-256)]
     DRV -- "Ray Client (10001)" --> HEAD
     subgraph HEAD[Head de Ray]
@@ -36,7 +36,9 @@ flowchart LR
   - el hilo coordinador: turnos entre torneos, límite de intentos simultáneos,
     plazos, reintentos y aceptación de resultados;
   - el driver de Ray Client, que envía cada intento al worker elegido.
-- **PostgreSQL:** la única fuente de verdad.
+- **PostgreSQL:** la única fuente de verdad. Corre dentro del nodo coordinador
+  (su contenedor en Docker) y solo atiende por socket Unix, sin puerto: ningún
+  otro nodo puede alcanzarla. Head y workers ni siquiera lo tienen instalado.
 - **Head de Ray:** el GCS (quién está vivo) y el servidor de Ray Client.
 - **Worker:** su raylet recibe la tarea; el árbitro descarga los dos bots,
   verifica su SHA-256, los lanza como procesos con límites y juega la partida.
@@ -69,8 +71,10 @@ puertos y la misma configuración.
 - **El head de Ray:** toda la ejecución se para. `/ready` pasa a 503 a los
   ~45 s y no se acepta nada. Después los torneos terminan. No se pierde nada
   confirmado.
-- **El coordinador:** la API y la ejecución se paran. Al arrancar, los intentos
+- **El coordinador (con su base):** la API, la ejecución y PostgreSQL se paran
+  juntos. Al arrancar, PostgreSQL rehace su registro de cambios, los intentos
   en curso quedan perdidos (`attempt.lost`) y se repiten; lo aceptado se
-  conserva y el cliente reanuda sus eventos.
-- **PostgreSQL:** se para todo (`/ready` 503). Su durabilidad es la de su
-  volumen.
+  conserva y el cliente reanuda sus eventos. La durabilidad es la del volumen
+  `tm-postgres-data`.
+- **Solo PostgreSQL** (su proceso muere dentro del coordinador): el contenedor
+  del coordinador termina con error; no queda un coordinador vivo sin base.

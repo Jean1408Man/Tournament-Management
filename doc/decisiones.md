@@ -15,11 +15,52 @@ de idempotencia. El coordinador solo mantiene en memoria lo que puede
 reconstruir; Ray y los workers mantienen estado transitorio de ejecución, sin autoridad
 sobre los resultados durables. Los bytes de los bots se guardan en el almacén
 de artefactos del coordinador; deben conservarse junto con PostgreSQL.
+PostgreSQL es la persistencia local del nodo coordinador: corre dentro de su
+contenedor y solo atiende por socket Unix, sin puerto ni contraseña, así que
+ningún otro nodo puede alcanzarla. Head y workers no lo tienen instalado.
 
 **Por qué.** Una base transaccional da de serie lo que habría que construir a
 mano con estado en memoria o dentro de Ray: escrituras atómicas, bloqueo por
 partida y durabilidad tras un commit. Además, lo guardado no depende de Ray, que
 se sustituye en la Fase 2.
+
+**Por qué no un actor de Ray.** Ray puede guardar estado en un actor: una clase
+`@ray.remote` cuyo objeto vive en la memoria de un proceso que Ray coloca en
+algún nodo y cuyos métodos se ejecutan de uno en uno. En la forma se parece a
+esta decisión (un único dueño del estado al que los demás piden por mensajes,
+en un solo nodo y sin réplica), pero difiere en seis puntos que la plataforma
+necesita:
+
+1. **Durabilidad.** El estado del actor está en RAM y se pierde si muere su
+   proceso o su nodo. Ray puede reiniciarlo (`max_restarts`), pero vuelve a
+   ejecutar el constructor y el actor arranca vacío, salvo que la aplicación
+   guarde sus propias copias. En la
+   [pérdida del head](campaign/resultados.md#pérdida-del-head) la recuperación
+   reinicia los workers y el coordinador: con el estado en un actor se habría
+   perdido; con PostgreSQL el torneo terminó con un resultado por partida.
+2. **Atomicidad.** Si un método del actor cambia varios atributos y falla a
+   mitad, los primeros cambios quedan hechos: no hay vuelta atrás. Aceptar un
+   resultado actualiza el intento, `results`, el avance del torneo y el
+   historial en una sola transacción: queda todo o nada.
+3. **Ubicación y descubrimiento.** Ray elige el nodo del actor, lo anota en el
+   head y la referencia oculta dónde está. La base está donde la pone el
+   despliegue (`TM_DATABASE_URL`): todo es explícito, se puede inspeccionar y
+   no depende del head.
+4. **Concurrencia.** Un actor atiende una llamada a la vez (o, con varios hilos,
+   deja la protección a la aplicación): las consultas de la API esperarían
+   detrás de las escrituras del coordinador. En PostgreSQL las peticiones HTTP
+   y el hilo coordinador trabajan a la vez, y arbitran los bloqueos de fila y
+   las restricciones (una sola fila por partida en `results`, D2).
+5. **Consulta del estado.** El estado de un actor solo se ve a través de sus
+   métodos. La base se consulta con SQL: la API la lee para producir la
+   evidencia que revisa `tm verify` (D6), y los escenarios y la UI la consultan
+   en modo de solo lectura.
+6. **Quién decide ante un fallo.** Ray detecta la muerte de un actor, avisa a
+   quien lo llama (`RayActorError`) y puede reiniciarlo y repetir llamadas por
+   su cuenta (`max_restarts`, `max_task_retries`): habría ejecuciones que la
+   plataforma no ve ni cuenta, la misma razón de D3. Con el estado en
+   PostgreSQL cada pérdida queda como evento (`attempt.lost`) y la plataforma
+   decide repetir con una generación nueva (D2).
 
 **Consecuencias.**
 
@@ -28,7 +69,10 @@ se sustituye en la Fase 2.
 - Al arrancar, el coordinador reconstruye su trabajo desde la base.
 - `tm verify` puede comprobar cualquier ejecución a partir de lo guardado.
 - Presupone un único coordinador activo por base (no hay elección de líder).
-- PostgreSQL pasa a ser imprescindible; su caída no se probó en la campaña.
+- PostgreSQL pasa a ser imprescindible. Cae y se recupera con el coordinador:
+  tras un SIGKILL del contenedor rehace su registro de cambios y lo confirmado
+  se conserva; si muere solo PostgreSQL, el contenedor del coordinador termina
+  con error en vez de seguir vivo sin base.
 
 ## D2 — Generación por intento y aceptación transaccional
 

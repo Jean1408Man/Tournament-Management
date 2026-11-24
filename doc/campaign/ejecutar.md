@@ -13,8 +13,9 @@ Docker si el contenedor `tm-coordinator` está en marcha, local si no.
 `TM_SCENARIO_MODE=docker|local` lo fuerza.
 
 **Con Docker**, desde Bash en la raíz del repositorio (Linux como primera opción;
-en Windows, WSL o Git Bash). Prepara `.env` según el README y descarga
-`docker pull postgres:16.6-bookworm` antes de construir:
+en Windows, WSL o Git Bash). Prepara `.env` según el README si quieres cambiar
+alguna opción. La construcción crea las dos imágenes (workers y coordinador con
+su PostgreSQL local):
 
 ```bash
 bash deploy/docker/build-image.sh
